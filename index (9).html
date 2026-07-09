@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guitar Top Bracing Tools</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #111110; --bg2: #1a1918; --bg3: #222120; --bg4: #2c2b29;
+  --border: #333230; --border2: #444340;
+  --text: #e8e4dc; --muted: #8a8680; --dim: #5a5650;
+  --accent: #c8903a; --accent2: #4a9e8a; --gold: #d4a832;
+}
+html, body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100%; }
+body { display: flex; flex-direction: column; min-height: 100vh; }
+
+header { padding: 20px 28px; border-bottom: 1px solid var(--border); background: var(--bg2); }
+header h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: normal; color: var(--accent); letter-spacing: .01em; }
+header span { display: block; font-size: 11px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; margin-top: 3px; }
+
+main { flex: 1; max-width: 980px; margin: 0 auto; padding: 48px 24px 64px; width: 100%; }
+main > p.intro { color: var(--muted); font-size: 14px; line-height: 1.7; max-width: 700px; margin-bottom: 40px; }
+main > p.intro b { color: var(--text); }
+
+.cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+@media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 26px; display: flex; flex-direction: column; transition: border-color .15s, transform .15s; }
+.card:hover { border-color: var(--accent); }
+.card .eyebrow { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; }
+.card h2 { font-size: 18px; color: var(--text); margin-bottom: 10px; font-weight: 600; }
+.card p { font-size: 13px; line-height: 1.65; color: var(--muted); flex: 1; margin-bottom: 20px; }
+.card ul { font-size: 12.5px; line-height: 1.8; color: var(--muted); margin: 0 0 20px 18px; }
+.card a.open-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 16px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent);
+  text-decoration: none; font-size: 13px; font-weight: 500; transition: all .15s; align-self: flex-start;
+}
+.card a.open-btn:hover { background: #201810; }
+.card.visualizer a.open-btn { border-color: var(--accent2); color: var(--accent2); }
+.card.visualizer a.open-btn:hover { background: #0d1f1b; }
+
+.bridge-note { margin-top: 36px; padding: 16px 20px; background: var(--bg3); border: 1px dashed var(--border2); border-radius: 8px; font-size: 12.5px; line-height: 1.7; color: var(--dim); }
+.bridge-note b { color: var(--muted); }
+
+footer { padding: 18px 28px; border-top: 1px solid var(--border); font-size: 11px; color: var(--dim); text-align: center; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Guitar Top Bracing Tools</h1>
+  <span>Modal analysis · inverse bracing design</span>
+</header>
+
+<main>
+  <p class="intro">Two companion tools for guitar (and violin) top bracing work, both running entirely in the browser —
+  nothing is uploaded anywhere. <b>Bracing Designer</b> starts from measured data and searches for bracing that gets a top
+  to do something specific; <b>Bracing Visualizer</b> starts from a bracing pattern you already have and shows you what it
+  actually does.</p>
+
+  <div class="cards">
+    <div class="card designer">
+      <div class="eyebrow">Inverse design</div>
+      <h2>Bracing Designer</h2>
+      <p>Imports a roving-hammer modal dataset (ObieWebApp format), lets you set target frequencies against the measured
+      baseline, then searches several bracing topologies — X-brace, fan, falcate, and free-topology variants — for the one
+      that gets closest to your targets while respecting a bridge deflection limit.</p>
+      <ul>
+        <li>Import Data → Plate &amp; Load → Extract Modes → Generate Bracing → Results</li>
+        <li>Simulated-annealing search, running locally via Pyodide/scipy</li>
+        <li>Exports a project file the Visualizer can open directly</li>
+      </ul>
+      <a class="open-btn" href="designer/index.html">Open Bracing Designer →</a>
+    </div>
+
+    <div class="card visualizer">
+      <div class="eyebrow">Forward analysis</div>
+      <h2>Bracing Visualizer</h2>
+      <p>Trace or build a soundboard, add braces by hand, and watch the modal response update as you edit — mode shapes,
+      frequencies, and an animated 3D view of how the top actually moves.</p>
+      <ul>
+        <li>Soundboard → Braces → Modal Analysis → 3D View</li>
+        <li>Direct manual control over every brace's position and dimensions</li>
+        <li>Opens project files exported from Bracing Designer</li>
+      </ul>
+      <a class="open-btn" href="visualizer/index.html">Open Bracing Visualizer →</a>
+    </div>
+  </div>
+
+  <div class="bridge-note">
+    <b>These two are meant to be used together.</b> A natural loop: bring measured data into Designer, solve for bracing
+    that hits your targets, then use "Export as bracing-tool project…" on any result and open it straight in Visualizer —
+    the file formats already match — to inspect, hand-tune, or animate the winning layout.
+  </div>
+</main>
+
+<footer>
+  Runs entirely client-side — no data leaves your browser. See each tool's own Documentation for details on its models and assumptions.
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,3072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bracing Designer — Inverse Modal Design</title>
+<link rel="stylesheet" href="https://pyscript.net/releases/2026.3.1/core.css">
+<script type="module" src="https://pyscript.net/releases/2026.3.1/core.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #111110; --bg2: #1a1918; --bg3: #222120; --bg4: #2c2b29;
+  --border:  #333230; --border2: #444340;
+  --text:    #e8e4dc; --muted: #8a8680; --dim: #5a5650;
+  --accent:  #c8903a; --accent2: #4a9e8a; --gold: #d4a832;
+  --danger:  #b85050; --success: #4a9e6a;
+  --sbar: 260px; --hdr: 48px;
+}
+html, body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; line-height: 1.5; height: 100%; }
+body { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; }
+header { position: sticky; top: 0; z-index: 50; height: var(--hdr); display: flex; align-items: center; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+.header-wordmark { display: flex; flex-direction: column; justify-content: center; gap: 1px; margin-right: 20px; }
+.header-wordmark h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 14px; font-weight: normal; color: var(--accent); letter-spacing: 0.01em; white-space: nowrap; }
+.header-wordmark span { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
+.header-divider { width: 1px; height: 28px; background: var(--border); margin-right: 14px; flex-shrink: 0; }
+.tab-bar { display: flex; gap: 1px; }
+.tab { padding: 6px 15px; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-family: inherit; transition: color .15s, background .15s; border-bottom: 2px solid transparent; letter-spacing: .01em; }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab:hover:not(.active) { color: var(--text); background: var(--bg3); }
+.tab .stepnum { display: inline-block; width: 15px; height: 15px; border-radius: 50%; background: var(--bg4); color: var(--dim); font-size: 9px; text-align: center; line-height: 15px; margin-right: 5px; }
+.tab.active .stepnum { background: var(--accent); color: #1a1207; }
+.tab.done .stepnum { background: var(--success); color: #0a1a0f; }
+.header-actions { display: flex; gap: 6px; margin-left: auto; }
+.header-btn { display: flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit; transition: all .15s; white-space: nowrap; }
+.header-btn:hover { color: var(--text); border-color: var(--accent); background: var(--bg4); }
+
+.app { display: flex; height: calc(100vh - var(--hdr)); height: calc(100dvh - var(--hdr)); overflow: hidden; }
+.panel { display: none; width: 100%; height: 100%; min-height: 0; }
+.panel.active { display: flex; min-height: 0; }
+
+.sidebar { width: var(--sbar); flex-shrink: 0; min-height: 0; background: var(--bg2); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--border); }
+.sbar-section { padding: 12px 13px; border-bottom: 1px solid var(--border); }
+.sbar-title { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); margin-bottom: 9px; }
+.sbar-hint { font-size: 10.5px; color: var(--dim); line-height: 1.5; margin-top: 5px; }
+
+.main-area { flex: 1; position: relative; overflow: auto; background: var(--bg); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+.btn { display: block; width: 100%; padding: 7px 10px; margin-bottom: 6px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 12px; cursor: pointer; transition: all .15s; text-align: center; }
+.btn:hover { border-color: var(--accent); background: var(--bg4); }
+.btn.primary { border-color: var(--accent); color: var(--accent); }
+.btn.primary:hover { background: #201810; }
+.btn.success { border-color: var(--success); color: var(--success); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-row { display: flex; gap: 6px; }
+.btn-row .btn { margin-bottom: 0; }
+
+label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+input[type=text], input[type=number], select, textarea {
+  width: 100%; padding: 6px 8px; background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--text); font-family: inherit; font-size: 12px; margin-bottom: 8px;
+}
+textarea { font-family: 'Courier New', monospace; font-size: 11px; resize: vertical; }
+input[type=range] { width: 100%; margin-bottom: 8px; }
+.param-row { margin-bottom: 9px; }
+.param-row.inline { display: flex; gap: 8px; align-items: center; }
+.param-row.inline label { flex: 1; margin-bottom: 0; }
+.param-row.inline input { width: 90px; margin-bottom: 0; }
+.check-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11.5px; color: var(--text); }
+.check-row input { width: auto; margin: 0; }
+
+.status { font-size: 11.5px; padding: 8px 10px; border-radius: 4px; background: var(--bg3); border: 1px solid var(--border); color: var(--muted); margin-top: 4px; }
+.status.ok { border-color: var(--success); color: var(--success); }
+.status.err { border-color: var(--danger); color: var(--danger); }
+.status.warn { border-color: var(--gold); color: var(--gold); }
+
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+.card-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.data-table th { text-align: left; color: var(--dim); font-weight: 600; text-transform: uppercase; font-size: 9.5px; letter-spacing: .06em; padding: 5px 7px; border-bottom: 1px solid var(--border2); }
+table.data-table td { padding: 5px 7px; border-bottom: 1px solid var(--border); color: var(--text); }
+table.data-table tr:hover td { background: var(--bg3); }
+table.data-table input { margin: 0; padding: 3px 5px; font-size: 11px; }
+
+canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px solid var(--border); border-radius: 5px; cursor: crosshair; }
+
+.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; background: var(--bg4); color: var(--muted); border: 1px solid var(--border2); }
+.pill.on { background: #201810; color: var(--accent); border-color: var(--accent); }
+.pill.warn { background: #2a2210; color: var(--gold); border-color: var(--gold); }
+.pill.ok { background: #0d1f14; color: var(--success); border-color: var(--success); }
+.pill.err { background: #2a1010; color: var(--danger); border-color: var(--danger); }
+
+.results-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (max-width: 900px) { .results-grid { grid-template-columns: 1fr; } }
+.pattern-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.pattern-card.best { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.pattern-card-hdr { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.pattern-card-hdr h3 { font-size: 13px; font-weight: 600; color: var(--text); }
+.pattern-card-body { padding: 10px 12px; }
+.pattern-canvas-wrap { background: #0a0908; border-radius: 5px; overflow: hidden; }
+.metric-row { display: flex; justify-content: space-between; font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.metric-row .v { font-variant-numeric: tabular-nums; }
+.metric-row .v.good { color: var(--success); } .metric-row .v.bad { color: var(--danger); }
+
+.progress-bar { height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+.progress-bar .fill { height: 100%; background: var(--accent); transition: width .2s; width: 0%; }
+
+.tag-note { font-size: 10.5px; color: var(--dim); background: var(--bg3); border: 1px dashed var(--border2); border-radius: 4px; padding: 7px 9px; line-height: 1.5; }
+.upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; border: 1px dashed var(--border2); border-radius: 5px; color: var(--muted); font-size: 11px; cursor: pointer; text-align: center; transition: all .15s; }
+.upload-zone:hover { border-color: var(--accent); color: var(--text); background: var(--bg4); }
+
+.zoom-bar { position: absolute; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 3px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 5px; padding: 3px 6px; z-index: 10; }
+.zoom-btn { width: 21px; height: 21px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+.zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.confirm-bar { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 6px; position: sticky; bottom: 0; }
+.confirm-bar .msg { font-size: 11.5px; color: var(--muted); }
+.confirm-bar .msg.err { color: var(--danger); }
+.confirm-bar button { width: auto; padding: 8px 16px; margin: 0; flex-shrink: 0; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-wordmark"><h1>Bracing Designer</h1><span>Inverse Modal Design</span></div>
+  <div class="header-divider"></div>
+  <div class="tab-bar" id="tabBar">
+    <button class="tab active" data-panel="panelImport"><span class="stepnum">1</span>Import Data</button>
+    <button class="tab" data-panel="panelGeo"><span class="stepnum">2</span>Plate &amp; Load</button>
+    <button class="tab" data-panel="panelModes"><span class="stepnum">3</span>Extract Modes</button>
+    <button class="tab" data-panel="panelGen"><span class="stepnum">4</span>Generate Bracing</button>
+    <button class="tab" data-panel="panelResults"><span class="stepnum">5</span>Results</button>
+  </div>
+  <div class="header-actions">
+    <a class="header-btn" href="../index.html" style="text-decoration:none; display:flex; align-items:center;">🏠 Site home</a>
+    <a class="header-btn" href="../visualizer/index.html" style="text-decoration:none; display:flex; align-items:center;">↗ Bracing Visualizer</a>
+    <span id="engineStatusBadge" class="pill warn" style="margin-right:6px">⏳ Loading physics engine…</span>
+    <span id="loadStatusBadge" class="pill" style="margin-right:6px; display:none"></span>
+    <input type="text" id="projectNameInput" value="Untitled Project" placeholder="Project name" title="Project name — used for the saved file's name and title" style="width:150px; margin:0; padding:5px 9px; font-size:11px;">
+    <button class="header-btn" id="saveProjectBtn">💾 Save project</button>
+    <button class="header-btn" id="loadProjectBtn">📂 Load project</button>
+    <button class="header-btn" id="helpBtn">📖 Documentation</button>
+  </div>
+</header>
+
+<div class="app" id="app">
+
+<!-- ══════════════ PANEL 1 — IMPORT DATA ══════════════ -->
+<div class="panel active" id="panelImport">
+  <div class="sidebar">
+    <div class="sbar-section">
+      <div class="sbar-title">Data folder</div>
+      <button class="btn primary" id="pickFolderBtn">📁 Select data folder…</button>
+      <button class="btn" id="pickFolderFallbackBtn">📁 Select data folder (compatibility mode)…</button>
+      <input type="file" id="folderFallbackInput" webkitdirectory multiple style="display:none">
+      <div class="sbar-hint">If the button above does nothing, use "compatibility mode" instead.</div>
+      <div class="sbar-hint">Point this at your ObieWebApp Data Folder.</div>
+      <div class="status" id="folderStatus">No folder selected.</div>
+    </div>
+    <div class="sbar-section" id="runListSection" style="display:none">
+      <div class="sbar-title">Runs found</div>
+      <div id="runList"></div>
+    </div>
+    <div class="sbar-section" id="nodeStencilSection" style="display:none">
+      <div class="sbar-title">Node stencil</div>
+      <div class="sbar-hint">Maps hammer position labels to physical (x,y) mm. Check/edit the table after loading.</div>
+      <button class="btn" id="pickStencilBtn">Browse stencil JSON…</button>
+      <div class="status" id="stencilStatus">No stencil loaded — using an evenly spaced placeholder grid until you load or edit one.</div>
+    </div>
+  </div>
+  <div class="main-area">
+    <div class="card" id="runDetailCard" style="display:none">
+      <div class="card-title"><span>Run: <span id="runDetailName">—</span></span><span class="pill" id="runNodeCount">0 nodes</span></div>
+      <div id="runDetailBody"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Node positions (edit freely)</div>
+      <div style="overflow-x:auto"><table class="data-table" id="nodeTable"><thead><tr><th>Label</th><th>x (mm)</th><th>y (mm)</th><th>FRF loaded</th></tr></thead><tbody></tbody></table></div>
+      <div class="tag-note" style="margin-top:8px">x = along the plate's length (0 = neck end). y = across the width.</div>
+    </div>
+    <div class="confirm-bar">
+      <span class="msg" id="confirmMsg_panelImport">Load at least one node's FRF data to continue.</span>
+      <button class="btn primary" id="confirmBtn_panelImport">Confirm data &amp; continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PANEL 2 — EXTRACT MODES ══════════════ -->
+<div class="panel" id="panelModes">
+  <div class="sidebar">
+    <div class="sbar-section">
+      <div class="sbar-title">Spectrum source</div>
+      <label>Plot / detect peaks on</label>
+      <select id="spectrumSource"><option value="composite">Composite (average of all nodes)</option></select>
+      <div class="check-row"><input type="checkbox" id="spectrumLogX" checked><label style="margin:0">Log frequency axis</label></div>
+      <div class="sbar-hint">If a peak doesn't match ObieWebApp's FRF View, switch to that same node here.</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Peak detection</div>
+      <div class="param-row"><label>Min frequency (Hz)</label><input type="number" id="peakMinHz" value="40"></div>
+      <div class="param-row"><label>Max frequency (Hz)</label><input type="number" id="peakMaxHz" value="1200"></div>
+      <div class="param-row"><label>Sensitivity (prominence, dB)</label><input type="range" id="peakProm" min="0.5" max="12" step="0.5" value="3"></div>
+      <button class="btn primary" id="detectPeaksBtn">Detect peaks</button>
+      <div class="sbar-hint">Click directly on the plot to add a peak by hand, or click a marker to remove it.</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Already know the frequency?</div>
+      <div class="param-row inline"><label>Add target (Hz)</label><input type="number" id="quickAddHz" placeholder="e.g. 148.4" style="width:80px"></div>
+      <button class="btn" id="quickAddBtn">+ Add as target mode</button>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Shape extraction</div>
+      <label>Component used for mode shape</label>
+      <select id="shapeComponent"><option value="im">Imaginary part (default, best near resonance)</option><option value="re">Real part</option><option value="mag_ref">|H| signed by phase vs reference node</option></select>
+      <label>Reference node (for sign, if used)</label>
+      <select id="refNodeSelect"></select>
+    </div>
+  </div>
+  <div class="main-area">
+    <div class="card">
+      <div class="card-title">Response spectrum <span class="pill" id="spectrumSourceLbl">average |H(f)| across all loaded nodes</span></div>
+      <canvas class="plot" id="spectrumCanvas" width="1100" height="260"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Design target modes <span class="pill on">these are what the optimizer solves for</span></div>
+      <div class="tag-note" style="margin-bottom:8px">Edit <b>Target</b> to set what you want each mode to become; <b>Measured</b> is the read-only baseline. Rows with no Measured value are pure design targets.</div>
+      <div style="overflow-x:auto"><table class="data-table" id="modeTable">
+        <thead><tr><th>Use</th><th>Label</th><th>Measured (Hz)</th><th>Target (Hz)</th><th>Δ</th><th>Tol (±Hz)</th><th>Weight</th><th>Match shape</th><th>Shape</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <button class="btn" id="addModeRowBtn" style="margin-top:8px">+ Add target mode</button>
+    </div>
+    <div class="confirm-bar">
+      <span class="msg" id="confirmMsg_panelModes">Check at least one target mode's "Use" box to continue.</span>
+      <button class="btn primary" id="confirmBtn_panelModes">Confirm targets &amp; continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PANEL 3 — PLATE & LOAD ══════════════ -->
+<div class="panel" id="panelGeo">
+  <div class="sidebar">
+    <div class="sbar-section">
+      <div class="sbar-title">Outline preset</div>
+      <select id="outlinePreset">
+        <option value="custom">Custom (trace at right)</option>
+        <option value="dreadnought">Guitar — Dreadnought</option>
+        <option value="om">Guitar — OM / 000</option>
+        <option value="violin4-4">Violin — 4/4 (generic)</option>
+      </select>
+      <div class="param-row inline"><label>Body length Lx (mm)</label><input type="number" id="geoLx" value="508"></div>
+      <div class="param-row inline"><label>Body width Ly (mm)</label><input type="number" id="geoLy" value="394"></div>
+      <div class="param-row inline"><label>Thickness (mm)</label><input type="number" id="geoH" value="2.8"></div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Trace shapes</div>
+      <div class="sbar-hint">Left-click adds a point to whichever shape is selected below (or drags an existing one); right-click removes the nearest point.</div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceOutlineBtn">● Outline</button><button class="btn" id="traceHoleBtn">○ Sound hole</button><button class="btn" id="traceBridgeBtn">▱ Bridge</button></div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceMoveImgBtn">✥ Move image</button><button class="btn" id="traceCloseBtn">Close shape</button></div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceUndoBtn">Undo point</button><button class="btn danger" id="traceClearBtn">Clear</button></div>
+      <button class="btn" id="symmetrizeOutlineBtn" style="margin-top:6px">⇄ Symmetrize outline</button>
+      <div class="sbar-hint">Use if bracing looks asymmetric on a hand-traced body — see Documentation.</div>
+      <label style="margin-top:8px">Background image (optional, to trace over)</label>
+      <label class="upload-zone" for="traceImgUpload">📷 Upload photo/scan<input type="file" id="traceImgUpload" accept="image/*" style="display:none"></label>
+      <div id="imgControls" style="display:none; margin-top:8px">
+        <div class="check-row"><input type="checkbox" id="showTraceImage" checked><label style="margin:0">Show photo</label></div>
+        <label>Image scale</label>
+        <input type="range" id="imgScaleSlider" min="0.3" max="3" step="0.02" value="1">
+      </div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Top material</div>
+      <select id="matPreset"><option value="spruce">Spruce (E=11 GPa, ρ=420)</option><option value="cedar">Cedar (E=8 GPa, ρ=380)</option><option value="custom">Custom</option></select>
+      <div class="param-row inline"><label>Young's modulus E (GPa)</label><input type="number" id="geoE" value="11"></div>
+      <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="420"></div>
+      <div class="param-row inline"><label>Poisson's ratio ν</label><input type="number" id="geoNu" value="0.30" step="0.01"></div>
+      <label>Edge boundary condition</label>
+      <select id="geoBC"><option value="ss">Simply supported (glued to rim)</option><option value="free">Free (unsupported reference)</option></select>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Strength constraint</div>
+      <div class="param-row inline"><label>Bridge/string load (N)</label><input type="number" id="loadN" value="300"></div>
+      <div class="param-row inline"><label>Bridge torque (N·mm)</label><input type="number" id="bridgeTorque" value="10000"></div>
+      <div class="param-row inline"><label>Max deflection at bridge (mm)</label><input type="number" id="deflLimit" value="2"></div>
+      <div class="sbar-hint">Set torque to 0 for a pure vertical load. See Documentation for the model used.</div>
+      <div class="sbar-hint">Trace the actual bridge footprint with the ▱ Bridge tool above, or use "Reset bridge to rectangle" below for a quick starting shape, then drag its corners to match.</div>
+      <div class="param-row inline"><label>Rectangle length (mm)</label><input type="number" id="bridgeLenMm" value="155"></div>
+      <div class="param-row inline"><label>Rectangle depth (mm)</label><input type="number" id="bridgeDepthMm" value="12"></div>
+      <button class="btn" id="resetBridgeRectBtn">Reset bridge to rectangle</button>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">What's actually reachable?</div>
+      <div class="sbar-hint">Check this before setting targets in step 3 — see Documentation for why.</div>
+      <button class="btn primary" id="checkBareModesBtn">Compute bare-plate reference</button>
+      <div class="status" id="bareModesStatus">Not computed yet.</div>
+      <div id="bareModesList" style="display:none; margin-top:6px"></div>
+    </div>
+  </div>
+  <div class="main-area">
+    <div style="position:relative; flex:1; min-height:0;">
+      <canvas class="plot" id="geoCanvas" width="900" height="620" style="height:100%"></canvas>
+      <div class="zoom-bar"><button class="zoom-btn" id="geoZoomOut">−</button><span class="zoom-label" id="geoZoomLabel">100%</span><button class="zoom-btn" id="geoZoomIn">+</button></div>
+    </div>
+    <div class="confirm-bar">
+      <span class="msg" id="confirmMsg_panelGeo">Trace or select a plate outline (6+ points) and place the bridge point to continue.</span>
+      <button class="btn primary" id="confirmBtn_panelGeo">Confirm plate &amp; continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PANEL 4 — GENERATE BRACING ══════════════ -->
+<div class="panel" id="panelGen">
+  <div class="sidebar">
+    <div class="sbar-section">
+      <div class="sbar-title">Patterns to generate</div>
+      <div class="check-row"><input type="checkbox" id="genXBrace" checked><label style="margin:0">X-brace</label></div>
+      <div class="check-row"><input type="checkbox" id="genFan" checked><label style="margin:0">Fan bracing</label></div>
+      <div class="check-row"><input type="checkbox" id="genFalcate" checked><label style="margin:0">Falcate (curved / sickle)</label></div>
+      <div class="check-row"><input type="checkbox" id="genNovel" checked><label style="margin:0">Novel — free topology</label></div>
+      <div class="check-row"><input type="checkbox" id="genNovelExperimental"><label style="margin:0">Novel — experimental (asymmetric, unconstrained)</label></div>
+      <div class="sbar-hint">Only "Novel" and "Novel — experimental" search brace positions; the others optimize dimensions only on a fixed layout. See Documentation.</div>
+    </div>
+    <div class="sbar-section" id="novelExperimentalSettings" style="display:none">
+      <div class="sbar-title">Novel — experimental settings</div>
+      <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelExpMaxBraces" value="20" min="2" max="40"></div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Fan settings</div>
+      <div class="param-row inline"><label>Fan brace count</label><input type="number" id="fanCount" value="5" min="3" max="9"></div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Brace material</div>
+      <select id="braceMatPreset">
+        <option value="spruce">Sitka spruce (E=10 GPa, ρ=420)</option>
+        <option value="maple">Maple (E=12.6 GPa, ρ=630)</option>
+        <option value="mahogany">Mahogany (E=8.7 GPa, ρ=550)</option>
+        <option value="carbon">Carbon-fiber reinforced (E=60 GPa, ρ=700)</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="10" step="0.5"></div>
+      <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
+      <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Novel pattern settings</div>
+      <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
+      <div class="check-row"><input type="checkbox" id="novelSymmetric" checked><label style="margin:0">Enforce left-right symmetry</label></div>
+      <div class="sbar-hint">Leave on unless deliberately exploring asymmetric bracing.</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Optimizer</div>
+      <div class="param-row inline"><label>Search grid resolution</label><input type="number" id="optGN" value="34" min="14" max="40"></div>
+      <div class="param-row inline"><label>Iterations per pattern</label><input type="number" id="optIters" value="900" min="100" max="4000"></div>
+      <div class="sbar-hint">Raise this if results barely change between runs or iterations.</div>
+      <div class="sbar-hint">Struggling to hit several tight targets at once? See Documentation for tuning tips.</div>
+      <div class="param-row inline"><label>Mass penalty weight</label><input type="number" id="massWeight" value="0.15" step="0.05"></div>
+      <button class="btn primary" id="runOptimizeBtn">▶ Generate &amp; compare</button>
+      <button class="btn danger" id="stopOptimizeBtn" disabled>■ Stop</button>
+      <div class="progress-bar"><div class="fill" id="genProgressFill"></div></div>
+      <div class="status" id="genStatus">Idle.</div>
+    </div>
+  </div>
+  <div class="main-area">
+    <div id="genLog" class="card" style="font-family:'Courier New',monospace; font-size:11px; max-height:400px; overflow-y:auto; white-space:pre-wrap; color:var(--muted)"></div>
+    <div class="confirm-bar">
+      <span class="msg" id="confirmMsg_panelGen">Run "Generate & compare" above to produce at least one result.</span>
+      <button class="btn primary" id="confirmBtn_panelGen">View results →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PANEL 5 — RESULTS ══════════════ -->
+<div class="panel" id="panelResults">
+  <div class="main-area" style="padding:16px">
+    <div class="card-title" style="font-size:14px">Candidate bracing patterns</div>
+    <div class="results-grid" id="resultsGrid">
+      <div class="tag-note">Run step 4 to see results here.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<input type="file" id="loadProjectInput" accept="application/json" style="display:none">
+<div id="helpOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center;">
+  <div style="max-width:760px; max-height:85vh; overflow:auto; background:var(--bg2); border:1px solid var(--border2); border-radius:8px; padding:22px;">
+    <h2 style="font-size:15px; margin-bottom:10px; color:var(--accent);">Documentation</h2>
+    <div id="helpBody" style="font-size:12px; line-height:1.7; color:var(--text);"></div>
+    <button class="btn" style="margin-top:14px" onclick="document.getElementById('helpOverlay').style.display='none'">Close</button>
+  </div>
+</div>
+
+<script>
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const DS = { dirHandle:null, dirName:'', runs:[], selectedRun:null, nodes:[], frf:{} };
+// nodes: [{label,x,y,hasFrf}]   frf: {label:{freq:Float64Array, re:Float64Array, im:Float64Array, dataType}}
+const MS = { compositeFreq:null, compositeMagDb:null, modes:[] };
+// modes: [{id,use,label,freq,tol,weight,matchShape,nodeAmp:{label:val}}]
+const GEO = {
+  outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.0814, bridge:{fx:0.63, fy:0.5},
+  bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:12,
+  Lx:0.508, Ly:0.394, h:0.0028, E:11e9, rho:420, nu:0.30, bcMode:'ss',
+  loadN:300, bridgeTorqueNmm:10000, deflLimitMm:2, traceMode:'outline', bgImage:null
+};
+/* A rectangle (length across the width, depth along the length) is a
+   sensible default bridge footprint before anyone's traced a real one --
+   generates fresh corner points from the current center + dimensions. */
+function resetBridgeRect(){
+  const halfDepthFrac = (GEO.bridgeDepthMm/2) / (GEO.Lx*1000);
+  const halfLenFrac = (GEO.bridgeLenMm/2) / (GEO.Ly*1000);
+  GEO.bridgePts = [
+    {fx:GEO.bridge.fx-halfDepthFrac, fy:GEO.bridge.fy-halfLenFrac},
+    {fx:GEO.bridge.fx-halfDepthFrac, fy:GEO.bridge.fy+halfLenFrac},
+    {fx:GEO.bridge.fx+halfDepthFrac, fy:GEO.bridge.fy+halfLenFrac},
+    {fx:GEO.bridge.fx+halfDepthFrac, fy:GEO.bridge.fy-halfLenFrac},
+  ];
+  GEO.bridgeClosed = true;
+}
+resetBridgeRect();
+function bridgeCentroid(){
+  if(!GEO.bridgePts.length) return GEO.bridge;
+  let sx=0,sy=0; GEO.bridgePts.forEach(p=>{sx+=p.fx;sy+=p.fy;});
+  return { fx: sx/GEO.bridgePts.length, fy: sy/GEO.bridgePts.length };
+}
+const GEN = { results:{} }; // keyed by pattern id -> {braces, freqs, mac, deflMm, massG, score, converged}
+let nextModeId = 1;
+
+const PATTERN_META = {
+  xbrace:  { label:'X-brace',  color:'#c8903a' },
+  fan:     { label:'Fan bracing', color:'#4a9e8a' },
+  falcate: { label:'Falcate (curved)', color:'#b06fc9' },
+  novel:   { label:'Novel — free topology', color:'#d4a832' },
+  novelExperimental: { label:'Novel — experimental', color:'#e8664a' },
+};
+
+/* ============================================================
+   TAB SWITCHING
+   ============================================================ */
+document.getElementById('tabBar').addEventListener('click', e=>{
+  const btn = e.target.closest('.tab'); if(!btn) return;
+  goToPanel(btn.dataset.panel);
+});
+function markTabDone(panelId){
+  const tab = document.querySelector(`.tab[data-panel="${panelId}"]`);
+  if(tab) tab.classList.add('done');
+}
+
+/* ============================================================
+   CONFIRM BARS — explicit "I've entered what's needed" gate per
+   step. Marks that step's number green and advances to the next.
+   ============================================================ */
+const PANEL_ORDER = ['panelImport','panelGeo','panelModes','panelGen','panelResults'];
+const PANEL_VALIDATORS = {
+  panelImport: ()=> DS.nodes.length>0 ? null : 'Load at least one node\'s FRF data first (step 1).',
+  panelGeo:    ()=> (GEO.outlinePts.length>=3) ? null : 'Trace or select a plate outline (6+ points) first.',
+  panelModes:  ()=> MS.modes.some(m=>m.use) ? null : 'Check the "Use" box on at least one mode row.',
+  panelGen:    ()=> Object.keys(GEN.results).length>0 ? null : 'Run "Generate & compare" first — no results yet.',
+};
+function goToPanel(panelId){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  const tab = document.querySelector(`.tab[data-panel="${panelId}"]`);
+  if(tab) tab.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+  if(panelId==='panelModes'){ renderNodeTable(); refreshRefNodeSelect(); refreshSpectrumSourceSelect(); drawSpectrum(); }
+  if(panelId==='panelGeo') drawGeoCanvas();
+  if(panelId==='panelResults') renderResults();
+}
+Object.keys(PANEL_VALIDATORS).forEach(panelId=>{
+  const btn = document.getElementById('confirmBtn_'+panelId);
+  const msg = document.getElementById('confirmMsg_'+panelId);
+  if(!btn) return;
+  btn.onclick = ()=>{
+    const err = PANEL_VALIDATORS[panelId]();
+    if(err){ msg.textContent = err; msg.classList.add('err'); return; }
+    msg.classList.remove('err');
+    markTabDone(panelId);
+    const idx = PANEL_ORDER.indexOf(panelId);
+    const next = PANEL_ORDER[idx+1];
+    if(next) goToPanel(next);
+  };
+});
+
+document.getElementById('helpBtn').onclick = ()=>{
+  document.getElementById('helpBody').innerHTML = `
+  <p><b>What this tool does:</b> the goal is to take an actual plate — measured with ObieWebApp's roving-hammer setup — and
+  deliberately change what it does. Step 3 shows each detected resonance as a <b>Measured</b> baseline next to an editable
+  <b>Target</b>; leave Target equal to Measured and that mode stays put, or move it and the optimizer searches for bracing
+  that shifts it there. Rows with no Measured value are pure design targets with no baseline at all. It then searches several
+  bracing topologies — X-brace, fan, falcate, a fully free "novel" layout, and an unconstrained "experimental" variant — for
+  the one that best hits your targets while keeping static deflection under a bridge load below a limit you set.</p>
+
+  <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 1 — Import Data</h4>
+  <p>ObieApp's exact Stencil Builder JSON schema isn't published anywhere I could fetch (GitHub blocks automated access to the
+  source from here), so the stencil importer is deliberately flexible — it tries several common key names and falls back to
+  an editable table you can fill in by hand. The TRF/AvR/AvC binary parsers <i>are</i> built exactly to the published
+  byte-level spec in ObieApp's Technical Reference, so those should read real files correctly. If the folder picker does
+  nothing, that's almost always the browser or hosting blocking the folder-access API — this happens most often when opening
+  the file directly (<code>file://</code>) rather than through a server; "compatibility mode" works everywhere instead,
+  including local files. In the node table, x runs along the plate's length (0 = neck end), y runs across the width (0 =
+  centerline) — use whatever sign convention your stencil used for bass vs. treble, it only needs to be self-consistent with
+  everything else you enter.</p>
+
+  <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 2 — Plate & Load</h4>
+  <p>A hand-traced outline is almost never perfectly bilateral, even when traced carefully — real photos have angle and lens
+  distortion, and no top is traced pixel-perfect. Bracing patterns here (X-brace, fan, falcate) are exactly mirror-symmetric
+  by construction, so a slightly lopsided body makes even correct bracing look off. "Symmetrize outline" resamples your
+  traced shape into a length-vs-width envelope and averages the left/right half-width at every point along the body's
+  length into a matching symmetric shape.</p>
+  <p><b>Bridge load model:</b> the load is spread over the actual bridge footprint you trace (or a quick rectangle you can
+  drag into shape), not concentrated at a single point — a true point load lets whichever bit of stiffness happens to sit
+  right there absorb it, which understates how a real bridge under string tension loads the top.</p>
+  <p><b>Bridge torque:</b> strings don't just push straight down on the bridge — they break over the saddle at an angle,
+  which also <i>rotates</i> it: more force presses down on the neck-side edge of the footprint, less (or even lifting) on
+  the tail-side edge, on top of the net downward load. This is modeled as a torque distributed linearly across the
+  footprint's depth, like combined axial+bending stress on a beam cross-section. <b>This is a rough approximation, not a
+  derived value</b> — there's no reliable source here for exactly how much torque a real break angle produces, so treat the
+  default as a starting point and tune it against whatever real deflection numbers you're comparing to. Set it to 0 to fall
+  back to a pure vertical load. A moment also needs force applied at spatially separated grid points to mean anything — if
+  the bridge footprint is shallower than the solving grid's spacing, torque literally has no room to act across, and results
+  will flag this directly when it happens rather than silently doing nothing.</p>
+  <p><b>What's actually reachable:</b> bracing only <i>adds</i> mass and stiffness to a top — for realistic brace sizes,
+  stiffening dominates, so a mode's frequency is easy to push up but very hard (often impossible) to push below what the
+  bare, unbraced plate already does on its own. The "Compute bare-plate reference" button solves the unbraced top so you can
+  check this before setting targets — a target below the matching bare-plate row is asking bracing to lower that mode, which
+  usually isn't achievable by adding material.</p>
+
+  <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 3 — Extract Modes</h4>
+  <p>Mode shape extraction from measured data uses simple quadrature peak-picking: at the Measured frequency, the imaginary
+  part of each node's FRF (by default) becomes that node's mode-shape amplitude. This is a standard lightweight
+  approximation, not a full modal parameter fit — treat extracted shapes as a target pattern for matching, not as ground
+  truth. If a detected peak doesn't line up with what you see in ObieWebApp's own FRF View, switch the spectrum source to
+  that same single node here — the cross-node composite average can shift peak positions slightly versus any one node's
+  curve. <b>Measured</b> is the baseline (what the plate currently does); <b>Target</b> is what you want bracing to change
+  it to, freely editable and starting equal to Measured until you move it — that gap is the actual point of this tool.</p>
+
+  <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 4 — Generate Bracing</h4>
+  <p>Each pattern is searched independently with simulated annealing against one objective: frequency match to your
+  targets, mode-shape match (MAC) where enabled, a steep penalty if bridge deflection exceeds your limit, a penalty for any
+  brace material that lands outside the traced outline or onto the soundhole, a penalty for braces stacking on top of each
+  other, and a small penalty on added mass. Search runs on a coarser grid for speed; the winning layout is then <i>polished</i>
+  with a short additional search at full resolution (not just re-measured once and accepted) before being shown, since a
+  design that's near-optimal on a coarse grid isn't guaranteed to still be optimal on a finer one — deflection especially is
+  sensitive to grid resolution right at the load point.</p>
+  <p><b>Fixed vs. free patterns:</b> X-brace, fan, and falcate hold to a fixed reference layout each (positions, angles, and
+  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel" and "Novel — experimental"
+  are the only patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the search only
+  touches one half of the plate and mirrors it for evaluation) — leave this on unless deliberately exploring asymmetric
+  bracing, since an unconstrained search has no reason to land on a symmetric layout by chance, and asymmetric mode shapes
+  skew the radiation pattern and bass/treble balance even when frequencies land on target. "Experimental" is the same free
+  search with the symmetry requirement and brace-count cap both removed — it isn't unconstrained, since the same mass
+  penalty still applies, just far less boxed in. Brace material (modulus, density) is set once per run and applied to every
+  brace in every pattern; it's an isotropic-beam approximation, not modeling wood grain direction/anisotropy.</p>
+  <p><b>If the search grid resolution feels too coarse</b> — results barely changing between runs or across iterations —
+  raise it; cost is search speed, scaling roughly with the square of that number.</p>
+  <p><b>Tuning tips for hitting tight tolerances on several targets at once:</b> run-to-run variance is real and worth
+  exploiting — the same setup can land 0 targets within tolerance on one run and all of them on the next, so re-running and
+  keeping the best result is a legitimate, low-effort strategy. Raise iterations rather than splitting the same budget into
+  several shorter runs (tested directly — splitting measurably hurts, since each restart needs to fully cool to converge).
+  Loosen the deflection limit if it's the binding constraint. Weight your most important modes higher and relax tolerance on
+  the rest. For "Novel", raise max brace count for more independent tuning freedom. With many simultaneous tight targets
+  sharing the same brace parameters, exact agreement on all of them may not exist in the achievable space at all — this is a
+  best-compromise search, not a guarantee.</p>
+
+  <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">The physics and the optimizer</h4>
+  <p>The plate physics (grid, brace mass mapping, brace bending-stiffness coupling, eigenvalue solve, static deflection
+  solve) reuses the same finite-difference biharmonic-plate model as the bracing visualizer this tool pairs with. The
+  optimizer is simulated annealing running inside Python (Pyodide/scipy) in your browser — nothing leaves your computer.</p>`;
+  document.getElementById('helpOverlay').style.display='flex';
+};
+
+/* ============================================================
+   SMALL UTILITIES
+   ============================================================ */
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function fmt(v,d=1){ return (v==null || isNaN(v)) ? '—' : v.toFixed(d); }
+function logStatus(el, msg, cls){ el.textContent = msg; el.className = 'status'+(cls?(' '+cls):''); }
+function appendLog(msg){
+  const el = document.getElementById('genLog');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+/* Canvas bitmaps must match their displayed CSS box pixel-for-pixel, or the
+   browser stretches the bitmap non-uniformly to fill it -- this is what
+   caused the plate outline to look stretched (geoCanvas has explicit CSS
+   width AND height, which overrides its natural intrinsic aspect ratio). */
+function fitCanvasToContainer(cvs){
+  const w = Math.max(1, Math.round(cvs.clientWidth));
+  const h = Math.max(1, Math.round(cvs.clientHeight));
+  if(cvs.width !== w) cvs.width = w;
+  if(cvs.height !== h) cvs.height = h;
+}
+
+/* ============================================================
+   BINARY FILE PARSERS — TRF/TRV and AvR/AvC
+   Byte layout per ObieWebApp Technical Reference §4 (little-endian).
+   ============================================================ */
+function parseTRF(buf){
+  const dv = new DataView(buf);
+  if(buf.byteLength < 110) throw new Error('File too short to be a TRF');
+  const index = dv.getInt32(0, true);
+  const Xr = dv.getFloat64(4, true), Yr = dv.getFloat64(12, true);
+  const XActual = dv.getFloat64(20, true), YActual = dv.getFloat64(28, true);
+  const FRFType = dv.getUint8(36), DataType = dv.getUint8(37);
+  const HzRes = dv.getFloat64(38, true);
+  const StartFrequency = dv.getFloat64(46, true);
+  const EndFrequency = dv.getFloat64(54, true);
+  const fComplex = dv.getFloat32(62, true);
+  const fLength = dv.getFloat32(66, true);
+  const N = Math.round(fLength);
+  if(!(N>0) || N > 5_000_000) throw new Error('Bad fLength in TRF header: '+fLength);
+  const bytesPerSample = fComplex >= 1.5 ? 24 : (fComplex >= 0.5 ? 16 : 8);
+  const dataStart = 110;
+  const dataBytes = N * bytesPerSample;
+  if(dataStart + dataBytes > buf.byteLength) throw new Error('TRF data section runs past end of file');
+  const freq = new Float64Array(N), re = new Float64Array(N), im = new Float64Array(N);
+  let gamma2 = null;
+  if(fComplex >= 1.5) gamma2 = new Float64Array(N);
+  for(let k=0;k<N;k++){
+    freq[k] = StartFrequency + k*HzRes;
+    const off = dataStart + k*bytesPerSample;
+    if(fComplex < 0.5){
+      re[k] = dv.getFloat64(off, true); im[k] = 0;
+    } else {
+      re[k] = dv.getFloat64(off, true);
+      im[k] = dv.getFloat64(off+8, true);
+      if(gamma2) gamma2[k] = dv.getFloat64(off+16, true);
+    }
+  }
+  // Optional OBIE_META block after data
+  let meta = {};
+  const metaStart = dataStart + dataBytes;
+  try{
+    if(metaStart + 11 <= buf.byteLength){
+      const sentinelBytes = new Uint8Array(buf, metaStart, 11);
+      const sentinelStr = String.fromCharCode(...sentinelBytes);
+      if(sentinelStr.indexOf('OBIE_META') >= 0){
+        const rest = new TextDecoder('utf-8').decode(new Uint8Array(buf, metaStart+11));
+        rest.split('\n').forEach(line=>{
+          const i = line.indexOf(':');
+          if(i>0) meta[line.slice(0,i).trim()] = line.slice(i+1).trim();
+        });
+      }
+    }
+  }catch(e){ /* metadata is optional -- ignore parse issues */ }
+  return { freq, re, im, gamma2, index, Xr, Yr, XActual, YActual, FRFType, DataType, HzRes,
+           StartFrequency, EndFrequency, meta };
+}
+
+function parseAvRC(buf){
+  const dv = new DataView(buf);
+  if(buf.byteLength < 86) throw new Error('File too short to be an AvR/AvC');
+  const DataType = dv.getUint8(0);
+  const HzRes = dv.getFloat64(1, true);
+  const StartFrequency = dv.getFloat64(9, true);
+  const EndFrequency = dv.getFloat64(17, true);
+  const ScaleFactor = dv.getFloat64(25, true);
+  const nAverages = dv.getUint32(33, true);
+  const AverageType = dv.getUint8(37);
+  const fComplex = dv.getFloat32(38, true);
+  const fLength = dv.getFloat32(42, true);
+  const N = Math.round(fLength);
+  if(!(N>0) || N > 5_000_000) throw new Error('Bad fLength in AvR/AvC header: '+fLength);
+  const isComplex = fComplex >= 0.5;
+  const dataStart = 86;
+  const bytesPerSample = isComplex ? 16 : 8;
+  const dataBytes = N*bytesPerSample;
+  if(dataStart+dataBytes > buf.byteLength) throw new Error('AvR/AvC data section runs past end of file');
+  const freq = new Float64Array(N), re = new Float64Array(N), im = new Float64Array(N);
+  for(let k=0;k<N;k++){
+    freq[k] = StartFrequency + k*HzRes;
+    const off = dataStart + k*bytesPerSample;
+    if(isComplex){ re[k]=dv.getFloat64(off,true); im[k]=dv.getFloat64(off+8,true); }
+    else { re[k]=dv.getFloat64(off,true); im[k]=0; }
+  }
+  return { freq, re, im, DataType, HzRes, StartFrequency, EndFrequency, ScaleFactor, nAverages, AverageType };
+}
+
+async function parseFrfFile(fileHandleOrFile){
+  const file = fileHandleOrFile.getFile ? await fileHandleOrFile.getFile() : fileHandleOrFile;
+  const buf = await file.arrayBuffer();
+  const name = file.name.toLowerCase();
+  if(name.endsWith('.trf') || name.endsWith('.trv')) return { kind:'trf', name:file.name, data: parseTRF(buf) };
+  if(name.endsWith('.avr') || name.endsWith('.avc')) return { kind:'avrc', name:file.name, data: parseAvRC(buf) };
+  throw new Error('Unrecognized FRF file type: '+file.name);
+}
+
+function labelFromFilename(name){
+  return name.replace(/\.[^.]+$/,'');
+}
+
+/* ============================================================
+   DATA FOLDER SCAN (File System Access API)
+   "Any folder containing a TRF/ subfolder is shown. Instrument
+   folders are scanned one level deep." — same convention as
+   ObieWebApp's Modal Analysis tool, so existing Data Folders work.
+   ============================================================ */
+async function findTrfDir(dirHandle){
+  try{ return await dirHandle.getDirectoryHandle('TRF'); }
+  catch(e){ return null; }
+}
+
+document.getElementById('pickFolderBtn').onclick = async ()=>{
+  if(!window.showDirectoryPicker){
+    logStatus(document.getElementById('folderStatus'),
+      'This browser has no folder-access API — use "compatibility mode" below.', 'warn');
+    return;
+  }
+  let dh;
+  try{ dh = await window.showDirectoryPicker({ mode:'read' }); }
+  catch(e){
+    if(e && e.name === 'AbortError') return; // user cancelled the picker -- not an error
+    logStatus(document.getElementById('folderStatus'),
+      `The folder-access API was blocked (${e && e.name || e}). This is normal when opening this file directly ` +
+      `(file://) — Chrome/Edge disable it there for security. Use "compatibility mode" below, or serve this file ` +
+      `over http(s) / from a local server.`, 'err');
+    return;
+  }
+  logStatus(document.getElementById('folderStatus'), `Scanning "${dh.name}"…`);
+  const runs = [];
+  const rootTrf = await findTrfDir(dh);
+  if(rootTrf) runs.push({ name: dh.name, kind:'handle', trfDirHandle: rootTrf });
+  for await (const [name, handle] of dh.entries()){
+    if(handle.kind !== 'directory') continue;
+    const trfDir = await findTrfDir(handle);
+    if(trfDir) runs.push({ name, kind:'handle', trfDirHandle: trfDir });
+  }
+  finishFolderScan(dh.name, runs);
+};
+
+document.getElementById('pickFolderFallbackBtn').onclick = ()=> document.getElementById('folderFallbackInput').click();
+document.getElementById('folderFallbackInput').onchange = e=>{
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  // webkitRelativePath looks like "DataFolder/Violin_01/TRF/H01.trf" (or
+  // "DataFolder/TRF/H01.trf" if the picked folder IS the run itself).
+  // Group files by the folder that directly contains a TRF/ path segment,
+  // mirroring the "scanned one level deep" rule used for the handle path.
+  const rootName = (files[0].webkitRelativePath.split('/')[0]) || 'Data folder';
+  const runsMap = new Map(); // runName -> [File...]
+  files.forEach(f=>{
+    const parts = f.webkitRelativePath.split('/');
+    const trfIdx = parts.indexOf('TRF');
+    if(trfIdx < 1) return; // no TRF/ segment, or TRF is the root itself
+    const runName = parts[trfIdx-1];
+    if(!/\.(trf|trv|avr|avc)$/i.test(parts[parts.length-1])) return;
+    if(!runsMap.has(runName)) runsMap.set(runName, []);
+    runsMap.get(runName).push(f);
+  });
+  const runs = Array.from(runsMap.entries()).map(([name, trfFiles])=> ({ name, kind:'filelist', trfFiles }));
+  finishFolderScan(rootName, runs);
+};
+
+function finishFolderScan(rootName, runs){
+  DS.dirName = rootName; DS.runs = runs;
+  const listEl = document.getElementById('runList');
+  document.getElementById('runListSection').style.display = runs.length ? 'block' : 'none';
+  document.getElementById('nodeStencilSection').style.display = 'block';
+  if(!runs.length){
+    logStatus(document.getElementById('folderStatus'),
+      `No run folders with a TRF/ subfolder found inside "${rootName}". Select the parent Data Folder, or the run folder itself.`, 'warn');
+    listEl.innerHTML = '';
+    return;
+  }
+  logStatus(document.getElementById('folderStatus'), `Found ${runs.length} run(s) in "${rootName}".`, 'ok');
+  listEl.innerHTML = '';
+  runs.forEach(r=>{
+    const b = document.createElement('button');
+    b.className = 'btn'; b.style.textAlign='left'; b.textContent = '🎻 ' + r.name;
+    b.onclick = ()=> loadRun(r);
+    listEl.appendChild(b);
+  });
+}
+
+async function loadRun(run){
+  DS.selectedRun = run;
+  document.querySelectorAll('#runList .btn').forEach(b=>b.classList.remove('primary'));
+  logStatus(document.getElementById('folderStatus'), `Loading FRF files from "${run.name}"…`);
+  const files = []; // [{name, handle}] or [{name, file}]
+  if(run.kind === 'handle'){
+    for await (const [name, handle] of run.trfDirHandle.entries()){
+      if(handle.kind==='file' && /\.(trf|trv|avr|avc)$/i.test(name)) files.push({name, handle});
+    }
+  } else {
+    run.trfFiles.forEach(f=> files.push({ name: f.name, handle: f })); // File objects work directly with parseFrfFile
+  }
+  DS.frf = {};
+  DS.nodes = [];
+  let ok=0, fail=0;
+  for(const f of files){
+    try{
+      const parsed = await parseFrfFile(f.handle);
+      const label = labelFromFilename(f.name);
+      DS.frf[label] = parsed.data;
+      DS.nodes.push({ label, x: parsed.data.XActual || null, y: parsed.data.YActual || null, hasFrf:true });
+      ok++;
+    }catch(e){ fail++; console.warn('Failed to parse', f.name, e); }
+  }
+  document.getElementById('runDetailCard').style.display='block';
+  document.getElementById('runDetailName').textContent = run.name;
+  document.getElementById('runNodeCount').textContent = ok + ' nodes';
+  document.getElementById('runDetailBody').innerHTML =
+    `<div class="metric-row"><span>FRF files parsed</span><span class="v">${ok}${fail? ' ('+fail+' failed)':''}</span></div>` +
+    (ok ? `<div class="metric-row"><span>Frequency range</span><span class="v">${fmt(DS.frf[DS.nodes[0].label].StartFrequency||DS.frf[DS.nodes[0].label].freq[0],0)}–${fmt(DS.frf[DS.nodes[0].label].freq[DS.frf[DS.nodes[0].label].freq.length-1],0)} Hz</span></div>` : '');
+  logStatus(document.getElementById('folderStatus'), `Loaded ${ok} node FRF(s) from "${run.name}".`, fail? 'warn':'ok');
+  applyPlaceholderPositionsIfNeeded();
+  renderNodeTable();
+  buildComposite();
+  markTabDone('panelImport');
+}
+
+/* If no stencil is loaded yet, lay nodes out on a placeholder grid so the
+   table and preview aren't empty/blank -- purely visual until real
+   positions are supplied. */
+function applyPlaceholderPositionsIfNeeded(){
+  const anyReal = DS.nodes.some(n=>n.x!=null && n.y!=null && (n.x!==0 || n.y!==0));
+  if(anyReal) return;
+  const n = DS.nodes.length; if(!n) return;
+  const cols = Math.ceil(Math.sqrt(n));
+  DS.nodes.forEach((node,i)=>{
+    node.x = (i % cols) * 40;
+    node.y = Math.floor(i/cols) * 40;
+    node._placeholder = true;
+  });
+}
+
+/* ============================================================
+   STENCIL LOADER — flexible / defensive, schema unconfirmed.
+   Accepts several plausible shapes:
+     {nodes:[{label,x,y}]}  |  {positions:{H01:{x,y}}}  |
+     {H01:[x,y], ...}       |  [{label,x,y}, ...]
+   Units: assumes millimetres; if values look like they're in the
+   0..1 range they're treated as fractions of Lx/Ly instead.
+   ============================================================ */
+document.getElementById('pickStencilBtn').onclick = async ()=>{
+  const input = document.createElement('input');
+  input.type='file'; input.accept='application/json,.json';
+  input.onchange = async ()=>{
+    const file = input.files[0]; if(!file) return;
+    try{
+      const txt = await file.text();
+      const json = JSON.parse(txt);
+      const map = extractStencilMap(json);
+      if(!Object.keys(map).length) throw new Error('Recognized JSON but found no node entries in it.');
+      applyStencilMap(map);
+      logStatus(document.getElementById('stencilStatus'), `Loaded ${Object.keys(map).length} node position(s) from "${file.name}".`, 'ok');
+    }catch(e){
+      logStatus(document.getElementById('stencilStatus'),
+        `Couldn't auto-parse "${file.name}" (${e.message}). Edit positions directly in the table at right.`, 'warn');
+    }
+  };
+  input.click();
+};
+
+function extractStencilMap(json){
+  const map = {};
+  const put = (label,x,y)=>{ if(label!=null && isFinite(x) && isFinite(y)) map[String(label)] = {x:+x,y:+y}; };
+  if(Array.isArray(json)){
+    json.forEach(e=>{ if(e && typeof e==='object') put(e.label ?? e.name ?? e.id, e.x ?? e.fx, e.y ?? e.fy); });
+  } else if(json && typeof json==='object'){
+    const container = json.nodes || json.positions || json.stencil || json.points || json;
+    if(Array.isArray(container)){
+      container.forEach(e=>{ if(e && typeof e==='object') put(e.label ?? e.name ?? e.id, e.x ?? e.fx, e.y ?? e.fy); });
+    } else if(container && typeof container==='object'){
+      for(const [k,v] of Object.entries(container)){
+        if(v==null) continue;
+        if(Array.isArray(v)) put(k, v[0], v[1]);
+        else if(typeof v==='object') put(k, v.x ?? v.fx, v.y ?? v.fy);
+      }
+    }
+  }
+  return map;
+}
+
+function applyStencilMap(map){
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  const vals = Object.values(map);
+  const looksFractional = vals.length && vals.every(v => Math.abs(v.x)<=1.5 && Math.abs(v.y)<=1.5);
+  DS.nodes.forEach(node=>{
+    const m = map[node.label] || map[node.label.toUpperCase()] || map[node.label.toLowerCase()];
+    if(!m) return;
+    node.x = looksFractional ? m.x*LxMm : m.x;
+    node.y = looksFractional ? m.y*LyMm : m.y;
+    node._placeholder = false;
+  });
+  // Add any stencil nodes with no matching FRF, greyed out, so positions are visible/editable anyway.
+  Object.keys(map).forEach(label=>{
+    if(!DS.nodes.find(n=>n.label===label)){
+      DS.nodes.push({ label, x: map[label].x, y: map[label].y, hasFrf:false });
+    }
+  });
+  renderNodeTable();
+}
+
+/* ============================================================
+   NODE TABLE
+   ============================================================ */
+function renderNodeTable(){
+  const tbody = document.querySelector('#nodeTable tbody');
+  tbody.innerHTML = '';
+  DS.nodes.forEach((node, idx)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${node.label}</td>
+      <td><input type="number" value="${fmt(node.x,1)}" data-idx="${idx}" data-f="x"></td>
+      <td><input type="number" value="${fmt(node.y,1)}" data-idx="${idx}" data-f="y"></td>
+      <td><span class="pill ${node.hasFrf?'on':''}">${node.hasFrf?'yes':'no'}</span></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('input').forEach(inp=>{
+    inp.oninput = ()=>{
+      const idx = +inp.dataset.idx, f = inp.dataset.f;
+      DS.nodes[idx][f] = parseFloat(inp.value)||0;
+      DS.nodes[idx]._placeholder = false;
+    };
+  });
+}
+
+/* ============================================================
+   SPECTRUM SOURCES (composite avg, or any single node) + PEAK DETECTION
+   ============================================================ */
+MS.spectra = {}; // {'composite': {freq,magDb}, [nodeLabel]: {freq,magDb}}
+MS.spectrumSource = 'composite';
+
+function buildComposite(){
+  const labels = Object.keys(DS.frf);
+  MS.spectra = {};
+  if(!labels.length) return;
+  // Use the finest/shared grid: pick the node with the most bins as the reference axis,
+  // linearly interpolate every other node's |H| onto it.
+  let ref = labels[0];
+  labels.forEach(l=>{ if(DS.frf[l].freq.length > DS.frf[ref].freq.length) ref = l; });
+  const freq = DS.frf[ref].freq;
+  const sums = new Float64Array(freq.length);
+  labels.forEach(l=>{
+    const d = DS.frf[l];
+    const mag = new Float64Array(d.freq.length);
+    for(let i=0;i<mag.length;i++) mag[i] = Math.hypot(d.re[i], d.im[i]);
+    const interp = interp1(d.freq, mag, freq);
+    for(let i=0;i<freq.length;i++) sums[i]+=interp[i];
+    const magDb = new Float64Array(d.freq.length);
+    for(let i=0;i<d.freq.length;i++) magDb[i] = 20*Math.log10(Math.max(mag[i],1e-12));
+    MS.spectra[l] = { freq: d.freq, magDb };
+  });
+  const magDb = new Float64Array(freq.length);
+  for(let i=0;i<freq.length;i++) magDb[i] = 20*Math.log10(Math.max((sums[i]/Math.max(1,labels.length)), 1e-12));
+  MS.spectra.composite = { freq, magDb };
+  refreshSpectrumSourceSelect();
+}
+function refreshSpectrumSourceSelect(){
+  const sel = document.getElementById('spectrumSource'); if(!sel) return;
+  const cur = sel.value || 'composite';
+  sel.innerHTML = '<option value="composite">Composite (average of all nodes)</option>' +
+    Object.keys(DS.frf).map(l=>`<option value="${l}">${l} (single node — matches ObieWebApp's per-node curve)</option>`).join('');
+  sel.value = MS.spectra[cur] ? cur : 'composite';
+  MS.spectrumSource = sel.value;
+}
+function currentSpectrum(){ return MS.spectra[MS.spectrumSource] || MS.spectra.composite || null; }
+document.getElementById('spectrumSource').onchange = e=>{
+  MS.spectrumSource = e.target.value;
+  document.getElementById('spectrumSourceLbl').textContent =
+    MS.spectrumSource==='composite' ? 'average |H(f)| across all loaded nodes' : `single node: ${MS.spectrumSource}`;
+  drawSpectrum();
+};
+document.getElementById('spectrumLogX').onchange = drawSpectrum;
+
+function interp1(xs, ys, xq){
+  const out = new Float64Array(xq.length);
+  let j=0;
+  for(let i=0;i<xq.length;i++){
+    const x = xq[i];
+    while(j < xs.length-2 && xs[j+1] < x) j++;
+    const x0=xs[j], x1=xs[Math.min(j+1,xs.length-1)], y0=ys[j], y1=ys[Math.min(j+1,xs.length-1)];
+    const t = x1>x0 ? (x-x0)/(x1-x0) : 0;
+    out[i] = y0 + clamp(t,0,1)*(y1-y0);
+  }
+  return out;
+}
+
+document.getElementById('quickAddBtn').onclick = ()=>{
+  const hz = +document.getElementById('quickAddHz').value;
+  if(!hz || hz<=0) return;
+  MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+hz.toFixed(2),
+                   tol: Math.max(2, hz*0.03), weight:1, matchShape:false, nodeAmp:null, _manual:true });
+  renderModeTable(); drawSpectrum();
+  document.getElementById('quickAddHz').value = '';
+};
+
+document.getElementById('detectPeaksBtn').onclick = ()=>{
+  const spec = currentSpectrum();
+  if(!spec){ appendLogSafe('No FRF data loaded yet — go to step 1.'); return; }
+  const minHz = +document.getElementById('peakMinHz').value;
+  const maxHz = +document.getElementById('peakMaxHz').value;
+  const prom = +document.getElementById('peakProm').value;
+  const freq = spec.freq, mag = spec.magDb;
+  const kept = findPeaksWithProminence(freq, mag, minHz, maxHz, prom);
+  MS.modes = MS.modes.filter(m=>m._manual); // keep manually-added rows, replace auto ones
+  kept.forEach(i=>{
+    MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+freq[i].toFixed(2),
+                     measuredFreq:+freq[i].toFixed(2), tol: Math.max(2, freq[i]*0.03), weight:1,
+                     matchShape:true, nodeAmp:null, _manual:false });
+  });
+  renderModeTable(); drawSpectrum();
+};
+
+/* Standard topographic peak-prominence: a point is a local max, and its
+   prominence is how far it drops before you'd hit an even higher point in
+   either direction (or the edge of the range). This finds real peaks in a
+   crowded, multi-hump spectrum that a fixed comparison window would miss,
+   without needing to guess a window size. */
+function findPeaksWithProminence(freq, mag, minHz, maxHz, promDb){
+  const n = freq.length;
+  let i0=0, i1=n-1;
+  while(i0<n-1 && freq[i0]<minHz) i0++;
+  while(i1>0 && freq[i1]>maxHz) i1--;
+  const candidates = [];
+  for(let i=Math.max(1,i0+1); i<Math.min(n-1,i1); i++){
+    if(mag[i]>mag[i-1] && mag[i]>=mag[i+1]) candidates.push(i);
+  }
+  const peaks = [];
+  for(const i of candidates){
+    let leftMin = mag[i];
+    for(let k=i-1; k>=i0; k--){ if(mag[k]>mag[i]) break; if(mag[k]<leftMin) leftMin=mag[k]; }
+    let rightMin = mag[i];
+    for(let k=i+1; k<=i1; k++){ if(mag[k]>mag[i]) break; if(mag[k]<rightMin) rightMin=mag[k]; }
+    const prominence = mag[i] - Math.max(leftMin, rightMin);
+    if(prominence >= promDb) peaks.push(i);
+  }
+  // de-duplicate peaks closer together than ~0.5% of the searched range --
+  // real structural modes are rarely that close, this just merges near-
+  // identical bins that both cleared the prominence bar.
+  const minSepHz = Math.max(0.5, (maxHz-minHz)*0.005);
+  peaks.sort((a,b)=>mag[b]-mag[a]);
+  const kept = [];
+  peaks.forEach(i=>{
+    if(!kept.some(j=>Math.abs(freq[i]-freq[j])<minSepHz)) kept.push(i);
+  });
+  kept.sort((a,b)=>freq[a]-freq[b]);
+  return kept;
+}
+function appendLogSafe(msg){ const el=document.getElementById('genLog'); if(el){el.textContent+=msg+'\n';} }
+
+document.getElementById('addModeRowBtn').onclick = ()=>{
+  MS.modes.push({ id:nextModeId++, use:true, label:'target'+(MS.modes.length+1), freq:200, tol:10, weight:1, matchShape:false, nodeAmp:null, _manual:true });
+  renderModeTable();
+};
+
+function renderModeTable(){
+  const tbody = document.querySelector('#modeTable tbody');
+  tbody.innerHTML='';
+  let usedCount = 0;
+  MS.modes.forEach((m)=>{
+    const tr = document.createElement('tr');
+    const hasMeasured = m.measuredFreq!=null;
+    const delta = hasMeasured ? (m.freq - m.measuredFreq) : null;
+    const deltaStr = delta==null ? '—' : (delta>=0?'+':'')+delta.toFixed(1);
+    // Same i-th-used-target -> i-th-simulated-mode convention the solver
+    // itself uses, so this warns about the same thing the optimizer will
+    // actually struggle with.
+    let reachWarn = '';
+    if(m.use){
+      if(GEO.bareFreqs && usedCount < GEO.bareFreqs.length){
+        const bare = GEO.bareFreqs[usedCount];
+        if(m.freq < bare - m.tol){
+          reachWarn = `<span class="pill warn" title="Bare plate's mode ${usedCount+1} is already ${bare.toFixed(1)} Hz — adding bracing to reach ${m.freq} Hz here means lowering it, which is usually not achievable.">⚠ below bare (${bare.toFixed(0)}Hz)</span>`;
+        }
+      }
+      usedCount++;
+    }
+    tr.innerHTML = `
+      <td><input type="checkbox" ${m.use?'checked':''} data-id="${m.id}" data-f="use"></td>
+      <td><input type="text" value="${m.label}" data-id="${m.id}" data-f="label" style="width:80px"></td>
+      <td>${hasMeasured ? `<span style="color:var(--muted)">${m.measuredFreq.toFixed(1)}</span>` : '<span style="color:var(--dim)">— (no baseline)</span>'}</td>
+      <td><input type="number" value="${m.freq}" data-id="${m.id}" data-f="freq" style="width:70px">${reachWarn}</td>
+      <td><span style="color:${delta==null?'var(--dim)':(Math.abs(delta)<0.5?'var(--dim)':'var(--gold)')}" data-delta-for="${m.id}">${deltaStr}</span></td>
+      <td><input type="number" value="${m.tol}" data-id="${m.id}" data-f="tol" style="width:60px"></td>
+      <td><input type="number" value="${m.weight}" step="0.1" data-id="${m.id}" data-f="weight" style="width:55px"></td>
+      <td><input type="checkbox" ${m.matchShape?'checked':''} data-id="${m.id}" data-f="matchShape"></td>
+      <td><button class="btn" style="width:auto;padding:3px 8px;margin:0" data-id="${m.id}" data-act="extract">${m.nodeAmp?'Re-extract':'Extract'}</button> <span class="pill ${m.nodeAmp?'on':''}" style="margin-left:4px">${m.nodeAmp?'have shape':'no shape'}</span></td>
+      <td><button class="btn danger" style="width:auto;padding:3px 8px;margin:0" data-id="${m.id}" data-act="del">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  // (rest of function continues below with input/button wiring, unchanged)
+
+  tbody.querySelectorAll('input').forEach(inp=>{
+    inp.oninput = inp.onchange = ()=>{
+      const m = MS.modes.find(x=>x.id==inp.dataset.id); if(!m) return;
+      const f = inp.dataset.f;
+      m[f] = inp.type==='checkbox' ? inp.checked : (f==='label' ? inp.value : parseFloat(inp.value)||0);
+      if(f==='freq'){
+        // Patch just this row's Δ cell directly -- rebuilding the whole
+        // table here would steal focus out of the field mid-keystroke.
+        const span = tbody.querySelector(`span[data-delta-for="${m.id}"]`);
+        if(span){
+          const hasMeasured = m.measuredFreq!=null;
+          const delta = hasMeasured ? (m.freq - m.measuredFreq) : null;
+          span.textContent = delta==null ? '—' : (delta>=0?'+':'')+delta.toFixed(1);
+          span.style.color = delta==null?'var(--dim)':(Math.abs(delta)<0.5?'var(--dim)':'var(--gold)');
+        }
+      }
+      drawSpectrum();
+    };
+  });
+  tbody.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=>{
+      const m = MS.modes.find(x=>x.id==btn.dataset.id); if(!m) return;
+      if(btn.dataset.act==='del'){ MS.modes = MS.modes.filter(x=>x.id!==m.id); renderModeTable(); drawSpectrum(); }
+      if(btn.dataset.act==='extract'){ extractShapeForMode(m); renderModeTable(); }
+    };
+  });
+}
+
+/* ============================================================
+   MODE SHAPE EXTRACTION (quadrature peak-picking)
+   ============================================================ */
+function refreshRefNodeSelect(){
+  const sel = document.getElementById('refNodeSelect');
+  sel.innerHTML = Object.keys(DS.frf).map(l=>`<option value="${l}">${l}</option>`).join('');
+}
+function extractShapeForMode(m){
+  const sampleFreq = m.measuredFreq!=null ? m.measuredFreq : m.freq;
+  const comp = document.getElementById('shapeComponent').value;
+  const refLabel = document.getElementById('refNodeSelect').value;
+  const nodeAmp = {};
+  const refD = DS.frf[refLabel];
+  let refVal = 1;
+  if(comp==='mag_ref' && refD) refVal = sampleAt(refD, sampleFreq).re; // proxy for phase reference
+  Object.keys(DS.frf).forEach(label=>{
+    const d = DS.frf[label];
+    const s = sampleAt(d, sampleFreq);
+    let v;
+    if(comp==='im') v = s.im;
+    else if(comp==='re') v = s.re;
+    else { const mag = Math.hypot(s.re,s.im); v = mag * Math.sign(s.re*refVal || 1); }
+    nodeAmp[label] = v;
+  });
+  const maxAbs = Math.max(1e-12, ...Object.values(nodeAmp).map(Math.abs));
+  Object.keys(nodeAmp).forEach(l=> nodeAmp[l] = nodeAmp[l]/maxAbs );
+  m.nodeAmp = nodeAmp;
+}
+function sampleAt(frfData, freqHz){
+  const {freq,re,im} = frfData;
+  let lo=0, hi=freq.length-1;
+  while(hi-lo>1){ const mid=(lo+hi)>>1; if(freq[mid]<freqHz) lo=mid; else hi=mid; }
+  const t = (freq[hi]>freq[lo]) ? (freqHz-freq[lo])/(freq[hi]-freq[lo]) : 0;
+  return { re: re[lo]+clamp(t,0,1)*(re[hi]-re[lo]), im: im[lo]+clamp(t,0,1)*(im[hi]-im[lo]) };
+}
+
+/* ============================================================
+   CANVAS: spectrum plot with peak markers, click-to-toggle
+   Supports a log-frequency x-axis (matching ObieWebApp's own FRF
+   View) so peaks line up visually when cross-checking by eye.
+   ============================================================ */
+function drawSpectrum(){
+  const cvs = document.getElementById('spectrumCanvas');
+  const ctx = cvs.getContext('2d');
+  const W=cvs.width, H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0a0908'; ctx.fillRect(0,0,W,H);
+  const spec = currentSpectrum();
+  if(!spec){
+    ctx.fillStyle='#5a5650'; ctx.font='12px sans-serif'; ctx.fillText('Load FRF data in step 1 to see the response spectrum.', 16, H/2);
+    return;
+  }
+  const logX = document.getElementById('spectrumLogX').checked;
+  const freq = spec.freq, mag = spec.magDb;
+  const minHz = Math.max(freq[0], +document.getElementById('peakMinHz').value || freq[0]);
+  const maxHz = Math.min(freq[freq.length-1], +document.getElementById('peakMaxHz').value || freq[freq.length-1]);
+  let i0=0,i1=freq.length-1;
+  while(i0<freq.length && freq[i0]<minHz) i0++;
+  while(i1>0 && freq[i1]>maxHz) i1--;
+  const padL=42,padR=12,padT=14,padB=26;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  let dbMin=Infinity,dbMax=-Infinity;
+  for(let i=i0;i<=i1;i++){ dbMin=Math.min(dbMin,mag[i]); dbMax=Math.max(dbMax,mag[i]); }
+  if(!isFinite(dbMin)){dbMin=-60;dbMax=0;}
+  dbMax += (dbMax-dbMin)*0.08; dbMin -= (dbMax-dbMin)*0.02;
+  const f0=Math.max(freq[i0],1e-3), f1=Math.max(freq[i1],f0*1.001);
+  const xOf = logX
+    ? (f => padL + (Math.log10(Math.max(f,f0))-Math.log10(f0))/(Math.log10(f1)-Math.log10(f0)) * plotW)
+    : (f => padL + (f-f0)/(f1-f0) * plotW);
+  const xToFreq = logX
+    ? (x => Math.pow(10, Math.log10(f0) + (x-padL)/plotW * (Math.log10(f1)-Math.log10(f0))))
+    : (x => f0 + (x-padL)/plotW * (f1-f0));
+  const yOf = d => padT + (1-(d-dbMin)/(dbMax-dbMin)) * plotH;
+  // gridlines
+  ctx.strokeStyle='#222120'; ctx.lineWidth=1; ctx.font='9.5px monospace'; ctx.fillStyle='#5a5650';
+  const ticks = logX
+    ? [10,20,50,100,200,500,1000,2000,5000,10000,20000].filter(f=>f>=f0 && f<=f1)
+    : Array.from({length:5},(_,g)=> f0 + g*(f1-f0)/4);
+  ticks.forEach(f=>{
+    const x = xOf(f);
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,H-padB); ctx.stroke();
+    ctx.fillText((f>=1000?(f/1000)+'k':Math.round(f))+'Hz', x-14, H-8);
+  });
+  // curve
+  ctx.beginPath(); ctx.strokeStyle='#c8903a'; ctx.lineWidth=1.3;
+  for(let i=i0;i<=i1;i++){ const x=xOf(freq[i]), y=yOf(mag[i]); if(i===i0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+  ctx.stroke();
+  // mode markers
+  MS.modes.forEach(m=>{
+    if(m.freq<f0||m.freq>f1) return;
+    const x = xOf(m.freq);
+    ctx.strokeStyle = m.use ? '#d4a832' : '#5a5650';
+    ctx.setLineDash(m.use?[]:[3,3]);
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,H-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = m.use ? '#d4a832' : '#5a5650';
+    ctx.font='10px sans-serif';
+    ctx.fillText(m.label, x+3, padT+11);
+  });
+  cvs._xOf = xOf; cvs._xToFreq = xToFreq; cvs._freqRange = [f0,f1]; cvs._padL=padL; cvs._padR=padR;
+}
+document.getElementById('spectrumCanvas').addEventListener('click', e=>{
+  const cvs = e.target, rect = cvs.getBoundingClientRect();
+  const xCss = (e.clientX-rect.left) * (cvs.width/rect.width);
+  if(!cvs._freqRange) return;
+  // check if click hit an existing marker (within ~6px) -> remove it
+  let hit=null;
+  MS.modes.forEach(m=>{ const x=cvs._xOf(m.freq); if(Math.abs(x-xCss)<6) hit=m; });
+  if(hit){ MS.modes = MS.modes.filter(m=>m!==hit); renderModeTable(); drawSpectrum(); return; }
+  const [f0,f1] = cvs._freqRange;
+  const freqClicked = cvs._xToFreq(xCss);
+  if(freqClicked<f0||freqClicked>f1) return;
+  MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+freqClicked.toFixed(1),
+                   measuredFreq:+freqClicked.toFixed(1), tol: Math.max(2,freqClicked*0.03), weight:1, matchShape:true, nodeAmp:null, _manual:true });
+  renderModeTable(); drawSpectrum();
+});
+
+/* ============================================================
+   PLATE & LOAD — outline tracer, hole, bridge point
+   Ported from the paired bracing visualizer: Catmull-Rom spline
+   through traced points, draggable nodes, drag-to-size hole,
+   pannable/scalable reference photo. The traced outline's [0,1]
+   fraction space maps directly onto Lx×Ly, exactly as there —
+   the fit rect below must always represent the FULL declared
+   plate, never a sub-box of it, or frequencies come out wrong.
+   ============================================================ */
+const OUTLINE_PRESETS = {
+  dreadnought: { bodyLen:508, upperBout:292, waist:279, lowerBout:394, waistPos:0.62,
+                 holeCx:0.382, holeCy:0.5, holeR:0.0814 },
+  om:          { bodyLen:487, upperBout:270, waist:250, lowerBout:375, waistPos:0.60,
+                 holeCx:0.387, holeCy:0.5, holeR:0.0820 },
+  'violin4-4': { bodyLen:356, upperBout:166, waist:110, lowerBout:203, waistPos:0.58,
+                 holeCx:0.5, holeCy:0.5, holeR:0.001 },
+};
+function parametricOutline(preset){
+  const { upperBout, waist, lowerBout, waistPos } = preset;
+  const pts = []; const N=40;
+  for(let i=0;i<=N;i++){
+    const t = i/N; let halfW;
+    if(t < waistPos){
+      const tt = t/waistPos;
+      halfW = (waist/2 + (upperBout/2-waist/2)*Math.cos(tt*Math.PI/2)) / 1000;
+    } else {
+      const tt = (t-waistPos)/(1-waistPos);
+      halfW = (waist/2 + (lowerBout/2-waist/2)*Math.sin(tt*Math.PI/2)) / 1000;
+    }
+    pts.push({ t, halfW });
+  }
+  const outline = [];
+  pts.forEach(p=> outline.push({ fx: p.t, fy: 0.5 + p.halfW/(preset.lowerBout/1000) }));
+  for(let i=pts.length-1;i>=0;i--) outline.push({ fx: pts[i].t, fy: 0.5 - pts[i].halfW/(preset.lowerBout/1000) });
+  return outline;
+}
+
+document.getElementById('outlinePreset').onchange = e=>{
+  const key = e.target.value;
+  if(key==='custom') return;
+  const p = OUTLINE_PRESETS[key];
+  GEO.outlinePts = parametricOutline(p);
+  GEO.outlineClosed = true;
+  GEO.Lx = p.bodyLen/1000; GEO.Ly = p.lowerBout/1000;
+  GEO.holeCx = p.holeCx; GEO.holeCy = p.holeCy; GEO.holeR = p.holeR;
+  document.getElementById('geoLx').value = p.bodyLen;
+  document.getElementById('geoLy').value = p.lowerBout;
+  drawGeoCanvas();
+};
+['geoLx','geoLy','geoH'].forEach(id=>{
+  document.getElementById(id).oninput = ()=>{
+    GEO.Lx = +document.getElementById('geoLx').value/1000;
+    GEO.Ly = +document.getElementById('geoLy').value/1000;
+    GEO.h  = +document.getElementById('geoH').value/1000;
+    drawGeoCanvas();
+  };
+});
+const MAT_PRESETS = { spruce:{E:11,rho:420}, cedar:{E:8,rho:380} };
+document.getElementById('matPreset').onchange = e=>{
+  const p = MAT_PRESETS[e.target.value]; if(!p) return;
+  document.getElementById('geoE').value = p.E; document.getElementById('geoRho').value = p.rho;
+  GEO.E = p.E*1e9; GEO.rho = p.rho;
+};
+['geoE','geoRho','geoNu'].forEach(id=> document.getElementById(id).oninput = ()=>{
+  GEO.E = +document.getElementById('geoE').value*1e9;
+  GEO.rho = +document.getElementById('geoRho').value;
+  GEO.nu = +document.getElementById('geoNu').value;
+});
+document.getElementById('geoBC').onchange = e=> GEO.bcMode = e.target.value;
+document.getElementById('loadN').oninput = e=> GEO.loadN = +e.target.value;
+document.getElementById('bridgeTorque').oninput = e=> GEO.bridgeTorqueNmm = +e.target.value;
+document.getElementById('deflLimit').oninput = e=> GEO.deflLimitMm = +e.target.value;
+document.getElementById('bridgeLenMm').oninput = e=>{ GEO.bridgeLenMm = +e.target.value; };
+document.getElementById('bridgeDepthMm').oninput = e=>{ GEO.bridgeDepthMm = +e.target.value; };
+
+GEO.outlineClosed = false;
+GEO.imgScale = 1; GEO.imgOffsetX = 0; GEO.imgOffsetY = 0;
+GEO.holeDrawing = false; GEO.holeDone = GEO.holeR > 0.005;
+GEO.showImage = true;
+
+['traceOutlineBtn','traceHoleBtn','traceBridgeBtn','traceMoveImgBtn'].forEach(id=>{
+  document.getElementById(id).onclick = ()=>{
+    GEO.traceMode = { traceOutlineBtn:'outline', traceHoleBtn:'hole', traceBridgeBtn:'bridge', traceMoveImgBtn:'move' }[id];
+    ['traceOutlineBtn','traceHoleBtn','traceBridgeBtn','traceMoveImgBtn'].forEach(x=>document.getElementById(x).classList.remove('primary'));
+    document.getElementById(id).classList.add('primary');
+  };
+});
+document.getElementById('traceCloseBtn').onclick = ()=>{
+  if(GEO.traceMode==='bridge') GEO.bridgeClosed = GEO.bridgePts.length>=3;
+  else GEO.outlineClosed = GEO.outlinePts.length>=3;
+  drawGeoCanvas();
+};
+document.getElementById('traceUndoBtn').onclick = ()=>{
+  if(GEO.traceMode==='bridge'){ GEO.bridgePts.pop(); GEO.bridgeClosed = false; }
+  else if(GEO.traceMode==='outline'){ GEO.outlinePts.pop(); GEO.outlineClosed = false; }
+  drawGeoCanvas();
+};
+document.getElementById('traceClearBtn').onclick = ()=>{
+  if(GEO.traceMode==='bridge'){ GEO.bridgePts = []; GEO.bridgeClosed = false; }
+  else { GEO.outlinePts = []; GEO.outlineClosed = false; }
+  drawGeoCanvas();
+};
+document.getElementById('resetBridgeRectBtn').onclick = ()=>{
+  GEO.bridgeLenMm = +document.getElementById('bridgeLenMm').value;
+  GEO.bridgeDepthMm = +document.getElementById('bridgeDepthMm').value;
+  GEO.bridge = bridgeCentroid();
+  resetBridgeRect();
+  drawGeoCanvas();
+};
+/* A hand-traced outline is essentially never perfectly bilateral -- photo
+   angle, lens distortion, and just human tracing precision all creep in
+   asymmetrically. Bracing patterns here are exactly mirror-symmetric by
+   construction, so a slightly lopsided body reads as "the bracing looks
+   wrong" even when it's mathematically correct. This resamples the
+   traced shape into a length-vs-half-width envelope, averages the
+   left/right half-width at each length position, and rebuilds a
+   perfectly symmetric outline from that -- same overall silhouette,
+   corrected to match what the bracing already assumes. */
+document.getElementById('symmetrizeOutlineBtn').onclick = ()=>{
+  if(GEO.outlinePts.length < 6){
+    alert('Trace at least 6 outline points first.');
+    return;
+  }
+  const spline = catmullRomSpline(GEO.outlinePts, true, 500);
+  const fxs = spline.map(p=>p.fx);
+  const fxMin = Math.min(...fxs), fxMax = Math.max(...fxs);
+  const N = 140;
+  const halfWidths = [];
+  for(let i=0;i<=N;i++){
+    const fx = fxMin + (fxMax-fxMin)*i/N;
+    const win = Math.max((fxMax-fxMin)/N*1.6, 0.006);
+    const nearby = spline.filter(p=>Math.abs(p.fx-fx)<=win);
+    const upper = nearby.filter(p=>p.fy<0.5).map(p=>0.5-p.fy);
+    const lower = nearby.filter(p=>p.fy>=0.5).map(p=>p.fy-0.5);
+    const upperMax = upper.length ? Math.max(...upper) : null;
+    const lowerMax = lower.length ? Math.max(...lower) : null;
+    let hw;
+    if(upperMax!=null && lowerMax!=null) hw = (upperMax+lowerMax)/2;
+    else hw = upperMax!=null ? upperMax : (lowerMax!=null ? lowerMax : null);
+    halfWidths.push(hw);
+  }
+  // Fill any sample with no nearby points (gaps in a sparse trace) from the nearest valid neighbor.
+  for(let i=0;i<halfWidths.length;i++){
+    if(halfWidths[i]==null){
+      let j=i; while(j<halfWidths.length && halfWidths[j]==null) j++;
+      let k=i; while(k>=0 && halfWidths[k]==null) k--;
+      halfWidths[i] = halfWidths[j]!=null ? halfWidths[j] : (halfWidths[k]!=null ? halfWidths[k] : 0.05);
+    }
+  }
+  // Light smoothing so small tracing jitter doesn't turn into a wavy edge.
+  const smoothed = halfWidths.map((v,i,arr)=>{
+    const a=arr[Math.max(0,i-1)], c=arr[Math.min(arr.length-1,i+1)];
+    return (a+2*v+c)/4;
+  });
+  const newOutline = [];
+  for(let i=0;i<=N;i++){ const fx = fxMin+(fxMax-fxMin)*i/N; newOutline.push({fx, fy:0.5+smoothed[i]}); }
+  for(let i=N;i>=0;i--){ const fx = fxMin+(fxMax-fxMin)*i/N; newOutline.push({fx, fy:0.5-smoothed[i]}); }
+  GEO.outlinePts = newOutline;
+  GEO.outlineClosed = true;
+  drawGeoCanvas();
+};
+document.getElementById('traceImgUpload').onchange = e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    const img = new Image();
+    img.onload = ()=>{ GEO.bgImage = img; GEO.imgScale=1; GEO.imgOffsetX=0; GEO.imgOffsetY=0;
+      document.getElementById('imgControls').style.display='block'; drawGeoCanvas(); };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+document.getElementById('showTraceImage').onchange = e=>{ GEO.showImage = e.target.checked; drawGeoCanvas(); };
+document.getElementById('imgScaleSlider').oninput = e=>{ GEO.imgScale = +e.target.value; drawGeoCanvas(); };
+
+let geoZoom = 1;
+document.getElementById('geoZoomIn').onclick = ()=>{ geoZoom=Math.min(3,geoZoom*1.2); updateGeoZoomLabel(); drawGeoCanvas(); };
+document.getElementById('geoZoomOut').onclick = ()=>{ geoZoom=Math.max(0.4,geoZoom/1.2); updateGeoZoomLabel(); drawGeoCanvas(); };
+function updateGeoZoomLabel(){ document.getElementById('geoZoomLabel').textContent = Math.round(geoZoom*100)+'%'; }
+
+/* ── Catmull-Rom spline through outline points (identical to the bracing
+      visualizer's, so traced shapes look and solve the same way) ────────── */
+function catmullRomSpline(pts, closed, numPts){
+  if(pts.length < 2) return pts;
+  const result = []; const n = pts.length;
+  const steps = Math.max(6, Math.round(numPts/n));
+  const getPt = i => closed ? pts[((i%n)+n)%n] : pts[Math.max(0,Math.min(n-1,i))];
+  const segCount = closed ? n : n-1;
+  for(let seg=0; seg<segCount; seg++){
+    const p0=getPt(seg-1), p1=getPt(seg), p2=getPt(seg+1), p3=getPt(seg+2);
+    for(let j=0;j<steps;j++){
+      const t=j/steps, t2=t*t, t3=t2*t;
+      const fx=0.5*((2*p1.fx)+(-p0.fx+p2.fx)*t+(2*p0.fx-5*p1.fx+4*p2.fx-p3.fx)*t2+(-p0.fx+3*p1.fx-3*p2.fx+p3.fx)*t3);
+      const fy=0.5*((2*p1.fy)+(-p0.fy+p2.fy)*t+(2*p0.fy-5*p1.fy+4*p2.fy-p3.fy)*t2+(-p0.fy+3*p1.fy-3*p2.fy+p3.fy)*t3);
+      result.push({fx,fy});
+    }
+  }
+  return result;
+}
+
+/* ── Fixed-aspect fit rect: the trace region always represents the FULL
+      declared Lx×Ly plate (never a sub-box), matching the visualizer. ──── */
+function geoCanvasTransform(cvs){
+  const W=cvs.width,H=cvs.height, pad=26;
+  // Body LENGTH (fx, paired with Lx everywhere the solver touches it) is
+  // the long axis and belongs running top-to-bottom, the way anyone
+  // actually holds a guitar to photograph or trace it -- neck up, tail
+  // down. Body WIDTH (fy, paired with Ly) runs left-to-right. Getting
+  // this backwards is what made braces look like they were drawn onto a
+  // different, wrongly-proportioned box than the outline.
+  const aspect = GEO.Ly>0 ? GEO.Lx/GEO.Ly : 1.33; // height:width
+  let drawW = Math.min(W-2*pad, (H-2*pad)/aspect) * geoZoom;
+  let drawH = drawW*aspect;
+  const ox = (W-drawW)/2, oy = (H-drawH)/2;
+  return { ox, oy, drawW, drawH };
+}
+
+function drawGeoCanvas(){
+  const cvs = document.getElementById('geoCanvas'), ctx = cvs.getContext('2d');
+  fitCanvasToContainer(cvs);
+  const W=cvs.width,H=cvs.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  const {ox,oy,drawW,drawH} = geoCanvasTransform(cvs);
+  const toPx = p => [ox+p.fy*drawW, oy+p.fx*drawH];
+
+  // Reference photo — fit to its OWN aspect ratio inside the plate box,
+  // centered, with independent pan/scale (does not stretch to fill).
+  // A saved project file can never legitimately contain a real Image
+  // object (JSON has no way to represent one -- it silently turns into
+  // an empty {} when saved), so guard against exactly that: an older
+  // save with a reference photo loaded would otherwise hand drawImage a
+  // plain object and crash rendering entirely.
+  if(GEO.bgImage && GEO.showImage && GEO.bgImage instanceof HTMLImageElement && GEO.bgImage.complete && GEO.bgImage.naturalWidth > 0){
+    ctx.save(); ctx.globalAlpha = 0.5;
+    const img = GEO.bgImage;
+    const fitScale = Math.min(drawW/img.width, drawH/img.height);
+    const scale = fitScale*(GEO.imgScale||1);
+    const dw = img.width*scale, dh = img.height*scale;
+    const cx = ox+drawW/2+(GEO.imgOffsetX||0), cy = oy+drawH/2+(GEO.imgOffsetY||0);
+    ctx.drawImage(img, cx-dw/2, cy-dh/2, dw, dh);
+    ctx.restore();
+  }
+
+  // Outline — smoothed with the same Catmull-Rom spline as the visualizer.
+  const pts = GEO.outlinePts;
+  if(pts.length>=3){
+    const spline = catmullRomSpline(pts, GEO.outlineClosed, 300);
+    ctx.beginPath();
+    spline.forEach((p,i)=>{ const [x,y]=toPx(p); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(GEO.outlineClosed) ctx.closePath();
+    ctx.fillStyle = GEO.outlineClosed ? 'rgba(200,144,58,0.10)' : 'rgba(200,144,58,0.04)';
+    ctx.fill();
+    ctx.strokeStyle='#c8903a'; ctx.lineWidth=1.6; ctx.stroke();
+  }
+  // Raw control points + guide lines
+  if(pts.length>1){
+    ctx.save(); ctx.strokeStyle='#c8903a88'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath();
+    pts.forEach((p,i)=>{ const [x,y]=toPx(p); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(GEO.outlineClosed) ctx.closePath();
+    ctx.stroke(); ctx.restore();
+  }
+  pts.forEach((p,i)=>{
+    const [x,y]=toPx(p);
+    const isFirst = i===0, isDrag = geoDrag && geoDrag.idx===i;
+    ctx.beginPath(); ctx.arc(x,y, isDrag?7:(isFirst?6:5), 0, Math.PI*2);
+    ctx.fillStyle = isFirst ? '#d4a832' : (isDrag ? '#ffffff' : '#c8903a');
+    ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.3; ctx.stroke();
+  });
+  // Sound hole — drag-to-size, like the visualizer
+  if(GEO.holeDrawing || GEO.holeDone){
+    const [hx,hy] = toPx({fx:GEO.holeCx,fy:GEO.holeCy});
+    const rpx = GEO.holeR*Math.min(drawW,drawH);
+    ctx.save(); ctx.strokeStyle='#ffcc40'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(hx-8,hy); ctx.lineTo(hx+8,hy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hx,hy-8); ctx.lineTo(hx,hy+8); ctx.stroke();
+    ctx.setLineDash([]); ctx.strokeStyle='#4a9e8a'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.arc(hx,hy,Math.max(1,rpx),0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+  // Bridge footprint -- a traced shape, not a point: drag its corners to
+  // match your actual bridge. Rendered the same way as the body outline
+  // (Catmull-Rom through the points) for consistency.
+  if(GEO.bridgePts.length>=2){
+    const spline = GEO.bridgePts.length>=3 ? catmullRomSpline(GEO.bridgePts, GEO.bridgeClosed, 120) : GEO.bridgePts;
+    ctx.beginPath();
+    spline.forEach((p,i)=>{ const [x,y]=toPx(p); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(GEO.bridgeClosed) ctx.closePath();
+    ctx.fillStyle = GEO.bridgeClosed ? 'rgba(212,168,50,0.18)' : 'rgba(212,168,50,0.06)';
+    ctx.fill();
+    ctx.strokeStyle='#d4a832'; ctx.lineWidth=1.6; ctx.stroke();
+    GEO.bridgePts.forEach((p,i)=>{
+      const [x,y]=toPx(p);
+      const isDrag = geoDrag && geoDrag.idx===i && GEO.traceMode==='bridge';
+      ctx.beginPath(); ctx.arc(x,y, isDrag?6:4, 0, Math.PI*2);
+      ctx.fillStyle = isDrag ? '#ffffff' : '#d4a832';
+      ctx.fill(); ctx.strokeStyle='#1a1918'; ctx.lineWidth=1; ctx.stroke();
+    });
+    const c = bridgeCentroid();
+    const [bx,by] = toPx(c);
+    ctx.fillStyle='#d4a832'; ctx.font='10px sans-serif'; ctx.fillText('bridge footprint', bx+10, by-8);
+  }
+  // Fit-rect border, for orientation
+  ctx.strokeStyle='#222120'; ctx.strokeRect(ox,oy,drawW,drawH);
+
+  cvs._toPx = toPx; cvs._ox=ox; cvs._oy=oy; cvs._drawW=drawW; cvs._drawH=drawH;
+}
+
+function geoCanvasPos(e, cvs){
+  const rect = cvs.getBoundingClientRect();
+  return { x: (e.clientX-rect.left)*(cvs.width/rect.width), y: (e.clientY-rect.top)*(cvs.height/rect.height) };
+}
+/* Both the body outline and the bridge footprint are edited the same way
+   (add/drag/delete points on a closed polygon) -- this is the one place
+   that decides which shape is "active" so the mouse handlers below don't
+   need to know or care which one they're editing. */
+function activeTracePts(){
+  if(GEO.traceMode==='bridge') return GEO.bridgePts;
+  if(GEO.traceMode==='outline') return GEO.outlinePts;
+  return null;
+}
+function geoNodeHit(x,y,cvs){
+  const pts = activeTracePts(); if(!pts) return -1;
+  for(let i=pts.length-1;i>=0;i--){
+    const [px,py] = cvs._toPx(pts[i]);
+    if(Math.hypot(x-px,y-py) < 8) return i;
+  }
+  return -1;
+}
+
+let geoDrag = null;   // {idx} dragging a node, or {pendingClick,x,y}
+let imgDrag = null;   // panning the reference photo
+
+/* Inverse of the toPx used in drawGeoCanvas -- pixel-x is width (fy),
+   pixel-y is length (fx). Keep this as the one place that mapping lives. */
+function geoPxToFrac(x,y,cvs){
+  return { fx: (y-cvs._oy)/cvs._drawH, fy: (x-cvs._ox)/cvs._drawW };
+}
+
+const geoCvsEl = document.getElementById('geoCanvas');
+geoCvsEl.addEventListener('mousedown', e=>{
+  const {x,y} = geoCanvasPos(e, geoCvsEl);
+  if(!geoCvsEl._drawW) return;
+
+  if(GEO.traceMode==='move'){
+    imgDrag = { x, y, offX: GEO.imgOffsetX||0, offY: GEO.imgOffsetY||0 };
+    geoCvsEl.style.cursor = 'grabbing'; return;
+  }
+  if(GEO.traceMode==='hole'){
+    const {fx,fy} = geoPxToFrac(x,y,geoCvsEl);
+    GEO.holeCx=clamp(fx,0,1); GEO.holeCy=clamp(fy,0,1); GEO.holeR=0.001;
+    GEO.holeDrawing=true; GEO.holeDone=false; drawGeoCanvas(); return;
+  }
+  if(GEO.traceMode==='outline' || GEO.traceMode==='bridge'){
+    const idx = geoNodeHit(x,y,geoCvsEl);
+    if(idx>=0){ geoDrag = { idx }; geoCvsEl.style.cursor='grabbing'; return; }
+    geoDrag = { pendingClick:true, x, y };
+  }
+});
+geoCvsEl.addEventListener('mousemove', e=>{
+  const {x,y} = geoCanvasPos(e, geoCvsEl);
+  if(!geoCvsEl._drawW) return;
+
+  if(GEO.traceMode==='move'){
+    if(imgDrag){ GEO.imgOffsetX = imgDrag.offX + (x-imgDrag.x); GEO.imgOffsetY = imgDrag.offY + (y-imgDrag.y); drawGeoCanvas(); }
+    return;
+  }
+  if(GEO.traceMode==='hole' && GEO.holeDrawing){
+    const {fx,fy} = geoPxToFrac(x,y,geoCvsEl);
+    const dx=(fx-GEO.holeCx)*geoCvsEl._drawH, dy=(fy-GEO.holeCy)*geoCvsEl._drawW;
+    GEO.holeR = Math.hypot(dx,dy)/Math.min(geoCvsEl._drawW,geoCvsEl._drawH);
+    drawGeoCanvas(); return;
+  }
+  if(geoDrag){
+    if(geoDrag.idx !== undefined){
+      const pts = activeTracePts();
+      const {fx,fy} = geoPxToFrac(x,y,geoCvsEl);
+      pts[geoDrag.idx] = { fx: clamp(fx,0,1), fy: clamp(fy,0,1) };
+      drawGeoCanvas(); return;
+    }
+    if(geoDrag.pendingClick && Math.hypot(x-geoDrag.x,y-geoDrag.y) > 4){ geoDrag.pendingClick=false; geoDrag.cancelled=true; }
+    return;
+  }
+  geoCvsEl.style.cursor = ((GEO.traceMode==='outline'||GEO.traceMode==='bridge') && geoNodeHit(x,y,geoCvsEl)>=0) ? 'grab' : 'crosshair';
+});
+geoCvsEl.addEventListener('mouseup', e=>{
+  const {x,y} = geoCanvasPos(e, geoCvsEl);
+  if(GEO.traceMode==='move'){ imgDrag=null; geoCvsEl.style.cursor='grab'; return; }
+  if(GEO.traceMode==='hole'){
+    if(GEO.holeDrawing){ GEO.holeDrawing=false; GEO.holeDone=true; drawGeoCanvas(); }
+    return;
+  }
+  geoCvsEl.style.cursor='crosshair';
+  if(geoDrag){
+    if(geoDrag.idx !== undefined){ geoDrag=null; drawGeoCanvas(); return; }
+    if(geoDrag.pendingClick && !geoDrag.cancelled && geoCvsEl._drawW){
+      const pts = activeTracePts();
+      const {fx,fy} = geoPxToFrac(x,y,geoCvsEl);
+      if(pts && fx>=-0.05 && fx<=1.05 && fy>=-0.05 && fy<=1.05) pts.push({ fx:clamp(fx,0,1), fy:clamp(fy,0,1) });
+      drawGeoCanvas();
+    }
+    geoDrag = null;
+  }
+});
+geoCvsEl.addEventListener('mouseleave', ()=>{
+  if(GEO.traceMode==='move'){ imgDrag=null; geoCvsEl.style.cursor='grab'; return; }
+  if(GEO.traceMode==='hole' && GEO.holeDrawing){ GEO.holeDrawing=false; GEO.holeDone=true; drawGeoCanvas(); }
+  geoDrag = null; geoCvsEl.style.cursor='crosshair';
+});
+geoCvsEl.addEventListener('contextmenu', e=>{
+  e.preventDefault();
+  const pts = activeTracePts();
+  if(!pts || !pts.length) return;
+  const {x,y} = geoCanvasPos(e, geoCvsEl);
+  let bestI=0,bestD=Infinity;
+  pts.forEach((p,i)=>{ const [px,py]=geoCvsEl._toPx(p); const d=Math.hypot(px-x,py-y); if(d<bestD){bestD=d;bestI=i;} });
+  if(bestD < 20){
+    pts.splice(bestI,1);
+    if(GEO.traceMode==='outline' && pts.length<3) GEO.outlineClosed=false;
+    if(GEO.traceMode==='bridge' && pts.length<3) GEO.bridgeClosed=false;
+    drawGeoCanvas();
+  }
+});
+/* ============================================================
+   OPTIMIZER INVOCATION — builds the payload, calls into Pyodide,
+   handles progress/done/error callbacks.
+   ============================================================ */
+let pyEngineReady = false;
+let pyEngineStartTime = Date.now();
+document.getElementById('runOptimizeBtn').disabled = true;
+window.onPyEngineReady = ()=>{
+  pyEngineReady = true;
+  const badge = document.getElementById('engineStatusBadge');
+  badge.textContent = '✓ Engine ready'; badge.className = 'pill ok';
+  setTimeout(()=>{ badge.style.display='none'; }, 4000);
+  document.getElementById('runOptimizeBtn').disabled = false;
+  logStatus(document.getElementById('genStatus'), 'Engine ready.', 'ok');
+};
+// numpy/scipy can take a while to download+initialize on first load (scipy's
+// wheel alone is tens of MB). If it's still not ready after a while, say so
+// explicitly instead of leaving the person guessing.
+setInterval(()=>{
+  if(pyEngineReady) return;
+  const secs = Math.round((Date.now()-pyEngineStartTime)/1000);
+  const badge = document.getElementById('engineStatusBadge');
+  if(secs < 20){ badge.textContent = `⏳ Loading physics engine… (${secs}s)`; }
+  else if(secs < 60){ badge.textContent = `⏳ Still loading numpy/scipy… (${secs}s — normal on first load / slow connections)`; }
+  else { badge.textContent = `⚠ Engine taking unusually long (${secs}s) — check your browser console for blocked network requests (ad-blockers sometimes block the pyscript.net or CDN packages), or try reloading.`; badge.className='pill warn'; }
+}, 1000);
+/* ============================================================
+   BARE-PLATE REFERENCE — solve with zero braces so the person can see,
+   before setting targets, what's actually reachable by ADDING material.
+   ============================================================ */
+window.onBareModesResult = (jsonStr)=>{
+  const r = JSON.parse(jsonStr);
+  const box = document.getElementById('bareModesList');
+  if(!r.ok){
+    logStatus(document.getElementById('bareModesStatus'), 'Could not solve the bare plate — check the outline is closed and reasonable.', 'err');
+    box.style.display='none'; GEO.bareFreqs = null; return;
+  }
+  GEO.bareFreqs = r.freqs;
+  logStatus(document.getElementById('bareModesStatus'), `Computed ${r.freqs.length} bare-plate mode(s).`, 'ok');
+  box.style.display='block';
+  box.innerHTML = `<table class="data-table"><thead><tr><th>Mode</th><th>Bare freq (Hz)</th></tr></thead><tbody>` +
+    r.freqs.map((f,i)=>`<tr><td>${i+1}</td><td>${f.toFixed(1)}</td></tr>`).join('') +
+    `</tbody></table><div class="tag-note" style="margin-top:6px">Targets below the matching row here are usually unreachable — see Documentation.</div>`;
+  if(document.getElementById('modeTable')) renderModeTable(); // refresh any reachability hints
+};
+window.onBareModesError = (msg)=>{
+  logStatus(document.getElementById('bareModesStatus'), 'Error computing bare-plate modes — see browser console.', 'err');
+  console.error(msg);
+};
+document.getElementById('checkBareModesBtn').onclick = ()=>{
+  if(!pyEngineReady){ logStatus(document.getElementById('bareModesStatus'), 'Engine still loading — try again in a moment.', 'warn'); return; }
+  if(GEO.outlinePts.length < 6){ logStatus(document.getElementById('bareModesStatus'), 'Trace or select a plate outline first (need 6+ points).', 'err'); return; }
+  logStatus(document.getElementById('bareModesStatus'), 'Solving…', 'warn');
+  window.pyComputeBareModes(JSON.stringify(buildGeoPayload(Math.max(40, +document.getElementById('optGN').value+15 || 50))));
+};
+
+window.onOptimizerProgress = (label, it, iters, bestCost, freqsJson, deflMm)=>{
+  const pct = Math.round(100*it/Math.max(1,iters));
+  document.getElementById('genProgressFill').style.width = pct+'%';
+  const freqs = JSON.parse(freqsJson).map(f=>f.toFixed(1)).join(', ');
+  appendLog(`[${label}] ${it}/${iters}  best_cost=${bestCost.toFixed(2)}  freqs=[${freqs}]  defl=${deflMm!=null?deflMm.toFixed(3)+'mm':'—'}`);
+};
+window.onOptimizerDone = (jsonStr, cancelled)=>{
+  GEN.results = JSON.parse(jsonStr);
+  optimizerRunning = false;
+  document.getElementById('runOptimizeBtn').disabled = false;
+  document.getElementById('stopOptimizeBtn').disabled = true;
+  logStatus(document.getElementById('genStatus'), cancelled ? 'Stopped — showing whatever was found so far.' : 'Done — see Results tab.', cancelled?'warn':'ok');
+  document.getElementById('genProgressFill').style.width='100%';
+  markTabDone('panelGen');
+  const unresolved = Object.entries(GEN.results).filter(([k,r])=> r.torqueRequested && !r.torqueResolved).map(([k])=>k);
+  if(unresolved.length){
+    appendLog(`⚠ Bridge torque had no effect for: ${unresolved.join(', ')} — the bridge footprint's depth is shallower than this grid's spacing, so there's no room to apply a moment across it. Try a coarser (bigger) bridge depth, or note that at this resolution the torque setting isn't actually doing anything for those results.`);
+  }
+  appendLog(cancelled ? '=== stopped by user — showing best result found before stopping ===' : '=== all patterns complete ===');
+  document.querySelector('.tab[data-panel="panelResults"]').click();
+};
+window.onOptimizerError = (msg)=>{
+  optimizerRunning = false;
+  document.getElementById('runOptimizeBtn').disabled = false;
+  document.getElementById('stopOptimizeBtn').disabled = true;
+  logStatus(document.getElementById('genStatus'), 'Optimizer error — see log.', 'err');
+  appendLog('ERROR: '+msg);
+};
+
+function buildTargetsPayload(){
+  return MS.modes.filter(m=>m.use).map(m=>({
+    freq: m.freq, tol: m.tol, weight: m.weight, matchShape: !!(m.matchShape && m.nodeAmp),
+    measShape: (m.matchShape && m.nodeAmp) ? DS.nodes.map(n=> m.nodeAmp[n.label] ?? 0) : null,
+  }));
+}
+function buildMeasXY(){
+  const xs = DS.nodes.map(n=>(n.x||0)/1000), ys = DS.nodes.map(n=>(n.y||0)/1000);
+  return {measX: xs, measY: ys};
+}
+function buildGeoPayload(GN){
+  const c = bridgeCentroid();
+  return {
+    Lx: GEO.Lx, Ly: GEO.Ly, h: GEO.h, E: GEO.E, rho: GEO.rho, nu: GEO.nu,
+    bcMode: GEO.bcMode, outline: GEO.outlinePts, holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
+    bridgeFx: c.fx, bridgeFy: c.fy, loadN: GEO.loadN, bridgeTorqueNmm: GEO.bridgeTorqueNmm, GN,
+    bridgePts: GEO.bridgePts, bridgeLenMm: GEO.bridgeLenMm, bridgeDepthMm: GEO.bridgeDepthMm,
+  };
+}
+
+document.getElementById('genNovelExperimental').onchange = e=>{
+  document.getElementById('novelExperimentalSettings').style.display = e.target.checked ? 'block' : 'none';
+};
+const BRACE_MAT_PRESETS = { spruce:{E:10,rho:420}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
+document.getElementById('braceMatPreset').onchange = e=>{
+  const p = BRACE_MAT_PRESETS[e.target.value]; if(!p) return;
+  document.getElementById('braceE').value = p.E; document.getElementById('braceRho').value = p.rho;
+};
+
+document.getElementById('runOptimizeBtn').onclick = async ()=>{
+  if(!pyEngineReady){ logStatus(document.getElementById('genStatus'), 'Engine still loading numpy/scipy — try again in a moment.', 'warn'); return; }
+  if(GEO.outlinePts.length < 6){ logStatus(document.getElementById('genStatus'), 'Trace a plate outline in step 2 first (need 6+ points).', 'err'); return; }
+  const targets = buildTargetsPayload();
+  if(!targets.length){ logStatus(document.getElementById('genStatus'), 'No target modes selected — check boxes in step 3.', 'err'); return; }
+  const patterns = [];
+  if(document.getElementById('genXBrace').checked) patterns.push('xbrace');
+  if(document.getElementById('genFan').checked) patterns.push('fan');
+  if(document.getElementById('genFalcate').checked) patterns.push('falcate');
+  if(document.getElementById('genNovel').checked) patterns.push('novel');
+  if(document.getElementById('genNovelExperimental').checked) patterns.push('novelExperimental');
+  if(!patterns.length){ logStatus(document.getElementById('genStatus'), 'Select at least one pattern to generate.', 'err'); return; }
+
+  const GN = +document.getElementById('optGN').value;
+  const geoPayload = buildGeoPayload(GN);
+  // A moment needs force applied at spatially separated grid points -- if
+  // the bridge is shallower than the grid spacing, torque has literally
+  // nothing to act across. Bump the hi-fi resolution when torque is in
+  // play so it has a real chance of being resolved, capped so this can't
+  // silently make the final solve extremely slow.
+  let hifiGN = Math.max(50, GN+20);
+  if (Math.abs(GEO.bridgeTorqueNmm||0) > 1e-9) {
+    const neededGN = Math.ceil((GEO.Lx*1000) / (GEO.bridgeDepthMm/3.5)) + 1;
+    hifiGN = Math.min(90, Math.max(hifiGN, neededGN));
+  }
+  const payload = {
+    geo: geoPayload,
+    targets,
+    ...buildMeasXY(),
+    deflLimitMm: GEO.deflLimitMm,
+    massWeight: +document.getElementById('massWeight').value,
+    iters: +document.getElementById('optIters').value,
+    patterns, fanCount: +document.getElementById('fanCount').value,
+    maxBraces: +document.getElementById('novelMaxBraces').value,
+    maxBracesExperimental: +document.getElementById('novelExpMaxBraces').value,
+    symmetric: document.getElementById('novelSymmetric').checked,
+    hifiGN,
+    braceModulus: +document.getElementById('braceE').value*1e9,
+    braceDensity: +document.getElementById('braceRho').value,
+  };
+  document.getElementById('genLog').textContent = '';
+  document.getElementById('genProgressFill').style.width='0%';
+  logStatus(document.getElementById('genStatus'), 'Running… this can take a while for larger iteration counts.', 'warn');
+  appendLog('Starting optimizer for patterns: '+patterns.join(', '));
+  optimizerRunning = true;
+  document.getElementById('runOptimizeBtn').disabled = true;
+  document.getElementById('stopOptimizeBtn').disabled = false;
+  window.pyRunAllPatterns(JSON.stringify(payload));
+};
+let optimizerRunning = false;
+document.getElementById('stopOptimizeBtn').onclick = ()=>{
+  if(!optimizerRunning) return;
+  if(window.pyCancelOptimizer) window.pyCancelOptimizer();
+  document.getElementById('stopOptimizeBtn').disabled = true;
+  logStatus(document.getElementById('genStatus'), 'Stopping… finishing the current step, then showing the best result found so far.', 'warn');
+  appendLog('--- stop requested, finishing current step ---');
+};
+
+/* ============================================================
+   RESULTS PANEL
+   ============================================================ */
+function scorePattern(res){
+  if(!res || !res.ok) return Infinity;
+  const targets = buildTargetsPayload();
+  let cost = 0;
+  targets.forEach((t,i)=>{
+    const f = res.freqs[i];
+    if(f==null){ cost += 50; return; }
+    const over = Math.max(0, Math.abs(f-t.freq)-t.tol);
+    cost += t.weight * Math.pow(over/Math.max(1,t.freq),2)*400;
+  });
+  const over = Math.max(0, res.deflBridgeMm/Math.max(0.05,GEO.deflLimitMm) - 1);
+  cost += over*over*300;
+  cost += (+document.getElementById('massWeight').value||0.15) * (res.massG/40);
+  return cost;
+}
+
+function renderResults(){
+  const grid = document.getElementById('resultsGrid');
+  const keys = Object.keys(GEN.results);
+  if(!keys.length){ grid.innerHTML = '<div class="tag-note">Run step 4 to see results here.</div>'; return; }
+  const scores = {}; keys.forEach(k=> scores[k]=scorePattern(GEN.results[k]));
+  const sortedKeys = [...keys].sort((a,b)=> scores[a]-scores[b]); // best (lowest) first, grid flows left-to-right/top-to-bottom
+  const bestKey = sortedKeys[0];
+  const targets = buildTargetsPayload();
+  grid.innerHTML = '';
+  sortedKeys.forEach(key=>{
+    const res = GEN.results[key];
+    const meta = PATTERN_META[key] || {label:key, color:'#c8903a'};
+    const card = document.createElement('div');
+    card.className = 'pattern-card' + (key===bestKey ? ' best' : '');
+    const deflOk = res.ok && res.deflBridgeMm <= GEO.deflLimitMm;
+    card.innerHTML = `
+      <div class="pattern-card-hdr"><h3>${meta.label}${key===bestKey?' 🏆':''}</h3><span class="pill">${res.ok? (res.braces?res.braces.length:0)+' brace(s)' : 'failed'}</span></div>
+      <div class="pattern-card-body">
+        <div class="pattern-canvas-wrap"><canvas width="380" height="290" id="rescanvas_${key}"></canvas></div>
+        <div style="margin-top:8px">
+          ${targets.map((t,i)=>{
+            const f = res.ok ? res.freqs[i] : null;
+            const err = f!=null ? Math.abs(f-t.freq) : null;
+            const good = err!=null && err<=t.tol;
+            return `<div class="metric-row"><span>target ${t.freq.toFixed(0)}±${t.tol.toFixed(0)}Hz</span><span class="v ${f==null?'bad':(good?'good':'bad')}">${f!=null?f.toFixed(1)+' Hz':'missing'}</span></div>`;
+          }).join('')}
+          <div class="metric-row"><span>Bridge deflection (limit ${GEO.deflLimitMm}mm)</span><span class="v ${res.ok?(deflOk?'good':'bad'):'bad'}">${res.ok?res.deflBridgeMm.toFixed(3)+' mm':'—'}</span></div>
+          ${res.torqueRequested && !res.torqueResolved ? '<div class="tag-note" style="margin-top:6px">⚠ Bridge torque had no effect here — the bridge footprint is shallower than this grid can resolve, so there was no room to apply a moment across it.</div>' : ''}
+          <div class="metric-row"><span>Added brace mass</span><span class="v">${res.ok?res.massG.toFixed(1)+' g':'—'}</span></div>
+          <div class="metric-row"><span>Composite score (lower=better)</span><span class="v">${isFinite(scores[key])?scores[key].toFixed(1):'—'}</span></div>
+        </div>
+        ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces) : ''}
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn" data-export="${key}">💾 Export as bracing-tool project…</button>
+          <button class="btn primary" data-openviz="${key}" ${res.ok && res.braces && res.braces.length ? '' : 'disabled'}>↗ Open in Visualizer</button>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+    requestAnimationFrame(()=> drawPatternCanvas(key, res, meta.color));
+  });
+  grid.querySelectorAll('[data-export]').forEach(btn=>{
+    btn.onclick = ()=> exportPatternProject(btn.dataset.export);
+  });
+  grid.querySelectorAll('[data-openviz]').forEach(btn=>{
+    btn.onclick = ()=> openInVisualizer(btn.dataset.openviz);
+  });
+}
+
+/* Mirrors engine.py's _dim_at(): tip value at both ends, center value at
+   the midpoint, parabolic in between -- lets width and height taper
+   independently and by different amounts. */
+function dimAt(center, tip, t){
+  const tv = (tip==null) ? center : tip;
+  return tv + (center-tv)*4*t*(1-t);
+}
+/* Sample a brace's centerline in PHYSICAL mm (straight lerp or quadratic
+   bezier, matching _sample_brace in the engine), then build a tapered
+   footprint polygon by offsetting perpendicular to the local tangent by
+   half the local width -- this is what makes the on-plate footprint you
+   see here actually correspond to the brace's real width, not just an
+   arbitrary stroke thickness. */
+/* True arc length in mm (not just straight-line endpoint distance, which
+   would understate curved braces) by summing the same centerline samples
+   used for rendering. */
+function braceLengthMm(b, LxMm, LyMm){
+  const fp = braceFootprintPoints(b, LxMm, LyMm, 24);
+  let len = 0;
+  for(let i=1;i<fp.centerline.length;i++){
+    const a=fp.centerline[i-1], c=fp.centerline[i];
+    len += Math.hypot(c.x-a.x, c.y-a.y);
+  }
+  return len;
+}
+
+function renderBraceDimsTable(braces){
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  const rows = braces.map((b,i)=>{
+    const len = braceLengthMm(b, LxMm, LyMm);
+    const wTip = b.widthTip==null ? b.width : b.widthTip;
+    const hTip = b.heightTip==null ? b.height : b.heightTip;
+    const wStr = Math.abs(wTip-b.width)<0.05 ? b.width.toFixed(1) : `${wTip.toFixed(1)}→${b.width.toFixed(1)}→${wTip.toFixed(1)}`;
+    const hStr = Math.abs(hTip-b.height)<0.05 ? b.height.toFixed(1) : `${hTip.toFixed(1)}→${b.height.toFixed(1)}→${hTip.toFixed(1)}`;
+    return `<tr><td>${i+1}</td><td>${b.type==='curve'?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td></tr>`;
+  }).join('');
+  const mat = braces[0] ? `E=${(braces[0].modulus/1e9).toFixed(1)} GPa, ρ=${braces[0].density.toFixed(0)} kg/m³` : '';
+  return `<div style="margin-top:10px">
+    <div class="metric-row" style="border-bottom:none"><span style="font-weight:600;color:var(--text)">Brace dimensions</span><span class="v" style="color:var(--dim)">${mat}</span></div>
+    <table class="data-table" style="margin-top:4px"><thead><tr><th>#</th><th>Shape</th><th>Length (mm)</th><th>Width tip→ctr→tip (mm)</th><th>Height tip→ctr→tip (mm)</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+function braceFootprintPoints(b, LxMm, LyMm, NS){
+  NS = NS||16;
+  const p0=b.pts[0], p1=b.pts[1];
+  const isCurve = b.type==='curve' && b.cp;
+  const cx = LxMm*(isCurve?b.cp.fx:0), cy = LyMm*(isCurve?b.cp.fy:0);
+  const ax=p0.fx*LxMm, ay=p0.fy*LyMm, zx=p1.fx*LxMm, zy=p1.fy*LyMm;
+  const pts=[];
+  for(let i=0;i<=NS;i++){
+    const t=i/NS;
+    let x,y;
+    if(!isCurve){ x=ax+t*(zx-ax); y=ay+t*(zy-ay); }
+    else { x=(1-t)**2*ax+2*(1-t)*t*cx+t**2*zx; y=(1-t)**2*ay+2*(1-t)*t*cy+t**2*zy; }
+    pts.push({x,y,t});
+  }
+  const wC=b.width, wT=(b.widthTip==null?b.width:b.widthTip);
+  const left=[], right=[];
+  for(let i=0;i<=NS;i++){
+    const cur=pts[i], prev=pts[Math.max(0,i-1)], next=pts[Math.min(NS,i+1)];
+    let tx=next.x-prev.x, ty=next.y-prev.y; const L=Math.hypot(tx,ty)||1;
+    tx/=L; ty/=L;
+    const nx=-ty, ny=tx;
+    const halfW = dimAt(wC,wT,cur.t)/2;
+    left.push({x:cur.x+nx*halfW, y:cur.y+ny*halfW});
+    right.push({x:cur.x-nx*halfW, y:cur.y-ny*halfW});
+  }
+  return { left, right, centerline:pts, hC:b.height, hT:(b.heightTip==null?b.height:b.heightTip) };
+}
+
+function drawPatternCanvas(key, res, color){
+  const cvs = document.getElementById('rescanvas_'+key); if(!cvs) return;
+  fitCanvasToContainer(cvs);
+  const ctx = cvs.getContext('2d'); const W=cvs.width,H=cvs.height;
+  ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  const aspect = GEO.Lx/GEO.Ly; // height:width -- length runs top-to-bottom, matching the geometry tab
+  const drawH = Math.min(H*0.88, W*0.88*aspect), drawW = drawH/aspect;
+  const ox=(W-drawW)/2, oy=(H-drawH)/2;
+  const toPx = (fx,fy)=>[ox+fy*drawW, oy+fx*drawH];
+  if(GEO.outlinePts.length>=3){
+    const spline = catmullRomSpline(GEO.outlinePts, true, 200);
+    ctx.beginPath();
+    spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.closePath(); ctx.fillStyle='rgba(200,144,58,0.08)'; ctx.fill();
+    ctx.strokeStyle='#3a3936'; ctx.lineWidth=1; ctx.stroke();
+  }
+  if(GEO.holeR>0.001){
+    const [hx,hy]=toPx(GEO.holeCx,GEO.holeCy); const rpx=GEO.holeR*Math.min(drawW,drawH);
+    ctx.beginPath(); ctx.arc(hx,hy,rpx,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.strokeStyle='#8a8680'; ctx.lineWidth=1.2; ctx.stroke();
+  }
+  if(GEO.bridgePts.length>=2){
+    const spline = GEO.bridgePts.length>=3 ? catmullRomSpline(GEO.bridgePts, GEO.bridgeClosed, 60) : GEO.bridgePts;
+    ctx.beginPath();
+    spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(GEO.bridgeClosed) ctx.closePath();
+    ctx.strokeStyle='#5a5650'; ctx.lineWidth=1; ctx.stroke();
+  }
+  if(!res.ok || !res.braces) return;
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  res.braces.forEach(b=>{
+    const fp = braceFootprintPoints(b, LxMm, LyMm);
+    // Footprint polygon (width, tapered) in the brace's own color.
+    ctx.beginPath();
+    fp.left.forEach((p,i)=>{ const [x,y]=toPx(p.x/LxMm,p.y/LyMm); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    for(let i=fp.right.length-1;i>=0;i--){ const [x,y]=toPx(fp.right[i].x/LxMm,fp.right[i].y/LyMm); ctx.lineTo(x,y); }
+    ctx.closePath();
+    ctx.fillStyle = color+'99'; ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth=0.8; ctx.stroke();
+    // Height is invisible from directly above, so hint at it with a
+    // centerline whose stroke weight scales with local height.
+    ctx.beginPath();
+    fp.centerline.forEach((p,i)=>{
+      const [x,y]=toPx(p.x/LxMm,p.y/LyMm);
+      const hLocal = dimAt(fp.hC, fp.hT, p.t);
+      ctx.lineWidth = Math.max(0.4, hLocal*0.12);
+      if(i===0) ctx.moveTo(x,y); else { ctx.lineTo(x,y); ctx.strokeStyle='rgba(10,9,8,0.55)'; ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y); }
+    });
+  });
+}
+
+function buildVisualizerFormatProject(key){
+  const res = GEN.results[key];
+  const minPhys = Math.min(GEO.Lx, GEO.Ly) * 1000; // mm
+  return {
+    // Matches the paired bracing visualizer's own project file schema
+    // exactly (version/aState/traceShape/braces) -- it refuses to load
+    // anything without a truthy "version" field, which is why exports
+    // previously failed silently there.
+    version: 3,
+    title: `Bracing Designer — ${PATTERN_META[key] ? PATTERN_META[key].label : key} export`,
+    saved: new Date().toISOString(),
+    aState: {
+      Lx: GEO.Lx, Ly: GEO.Ly, h: GEO.h,
+      topE: GEO.E, topRho: GEO.rho, topNu: GEO.nu,
+      bcMode: GEO.bcMode, edgeKs: 0,
+    },
+    hifi: {
+      GN: null, freqs: res.freqs||[], solveTime: 0,
+      hasResults: !!(res.freqs && res.freqs.length),
+    },
+    traceShape: {
+      outlinePts: GEO.outlinePts,
+      closed: true,
+      holeDone: GEO.holeR > 0.001,
+      holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
+      lenMm: Math.round(GEO.Lx*1000),
+      shMm: Math.round(GEO.holeR * minPhys * 2),   // holeR is a fraction of min(Lx,Ly); diameter = holeR*min*2
+      widthMm: Math.round(GEO.Ly*1000),
+    },
+    braces: (res.braces||[]).map(b => ({
+      type: b.type, color: '#c8903a',
+      width: b.width, height: b.height, density: b.density, modulus: b.modulus,
+      pts: b.pts, cp: b.cp || null,
+    })),
+  };
+}
+function exportPatternProject(key){
+  const proj = buildVisualizerFormatProject(key);
+  const blob = new Blob([JSON.stringify(proj,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `bracing_${key}.json`; a.click();
+}
+/* Quick handoff to Bracing Visualizer -- same project format as the file
+   export above, just handed over via localStorage (same-origin, shared
+   across tabs) instead of a download-then-reupload round trip. A named
+   window target means clicking this again reuses the same tab rather than
+   spawning new ones. */
+function openInVisualizer(key){
+  const proj = buildVisualizerFormatProject(key);
+  try{
+    localStorage.setItem('bracingHandoff_toVisualizer', JSON.stringify(proj));
+  }catch(e){
+    alert("Couldn't hand off to Visualizer (browser storage blocked): "+e.message);
+    return;
+  }
+  window.open('../visualizer/index.html?handoff=1', 'bracingVisualizerWindow');
+}
+/* If Bracing Visualizer sent something over (its own "Open in Designer"
+   button), pick it up on load. Applies the same bracing-visualizer-format
+   import path already used for file loads and pattern exports. */
+function checkIncomingHandoff(){
+  let raw;
+  try{ raw = localStorage.getItem('bracingHandoff_toDesigner'); }catch(e){ return; }
+  if(!raw) return;
+  localStorage.removeItem('bracingHandoff_toDesigner');
+  try{
+    const proj = JSON.parse(raw);
+    applyVisualizerFormatProject(proj);
+    const badge = document.getElementById('loadStatusBadge');
+    if(badge){ badge.textContent='Loaded from Bracing Visualizer.'; badge.className='pill ok'; badge.style.display='inline-block';
+      setTimeout(()=>{ badge.style.display='none'; }, 6000); }
+  }catch(e){ console.error('Handoff from Visualizer failed:', e); }
+}
+
+/* ============================================================
+   PROJECT SAVE / LOAD (this tool's own state)
+   ============================================================ */
+function serializeFrf(frf){
+  // DS.frf holds Float64Arrays, which JSON can't represent directly --
+  // convert to plain arrays. This was previously skipped entirely, which
+  // is why a reloaded project would show a preserved target-mode table
+  // (those are small, stored in MS.modes) but an empty response spectrum:
+  // the underlying FRF curves it was built from were never saved at all.
+  const out = {};
+  Object.keys(frf).forEach(label=>{
+    const d = frf[label];
+    out[label] = {
+      freq: Array.from(d.freq), re: Array.from(d.re), im: Array.from(d.im),
+      DataType: d.DataType, HzRes: d.HzRes, StartFrequency: d.StartFrequency, EndFrequency: d.EndFrequency,
+    };
+  });
+  return out;
+}
+function deserializeFrf(obj){
+  const out = {};
+  Object.keys(obj||{}).forEach(label=>{
+    const d = obj[label];
+    out[label] = { freq: Float64Array.from(d.freq), re: Float64Array.from(d.re), im: Float64Array.from(d.im),
+      DataType: d.DataType, HzRes: d.HzRes, StartFrequency: d.StartFrequency, EndFrequency: d.EndFrequency };
+  });
+  return out;
+}
+document.getElementById('saveProjectBtn').onclick = ()=>{
+  // bgImage is a live Image element -- JSON can't represent one (it
+  // silently becomes {} on save), which is exactly what crashed
+  // rendering on reload. Reference photos were never meant to round-trip
+  // through project files anyway, so just leave it out entirely.
+  const { bgImage, ...geoToSave } = GEO;
+  const title = (document.getElementById('projectNameInput').value || 'Untitled Project').trim();
+  const proj = { title, savedAt: new Date().toISOString(), GEO: geoToSave, MS: {modes: MS.modes}, DS: {nodes: DS.nodes, frf: serializeFrf(DS.frf)}, GEN };
+  const blob = new Blob([JSON.stringify(proj)], {type:'application/json'});
+  const safeName = title.replace(/[^a-z0-9\-_ ]/gi,'').trim().replace(/\s+/g,'_') || 'bracing_designer_project';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = safeName+'.json'; a.click();
+};
+document.getElementById('loadProjectBtn').onclick = ()=> document.getElementById('loadProjectInput').click();
+/* Shared by the file-load path below and the quick handoff from Bracing
+   Visualizer -- pulls in geometry + braces from a bracing-visualizer-format
+   project (this tool's own session format has GEO/MS/DS/GEN instead and is
+   handled separately, since it also carries targets/measured data that a
+   visualizer file never has). */
+function applyVisualizerFormatProject(proj){
+  const ts = proj.traceShape||{}, as = proj.aState||{};
+  Object.assign(GEO, {
+    outlinePts: ts.outlinePts||[], holeCx: ts.holeCx, holeCy: ts.holeCy, holeR: ts.holeR,
+    Lx: as.Lx, Ly: as.Ly, h: as.h, E: as.topE, rho: as.topRho, nu: as.topNu, bcMode: as.bcMode,
+  });
+  if(proj.braces && proj.braces.length){
+    GEN.results['loaded'] = { ok:true, braces: proj.braces, freqs: (proj.hifi&&proj.hifi.freqs)||[] };
+  }
+  document.getElementById('geoLx').value = Math.round(GEO.Lx*1000);
+  document.getElementById('geoLy').value = Math.round(GEO.Ly*1000);
+  document.getElementById('geoH').value = (GEO.h*1000).toFixed(2);
+  document.getElementById('geoE').value = (GEO.E/1e9).toFixed(1);
+  document.getElementById('geoRho').value = GEO.rho;
+  forceGeoRedraw(); renderResults();
+  goToPanel(proj.braces && proj.braces.length ? 'panelResults' : 'panelGeo');
+}
+document.getElementById('loadProjectInput').onchange = async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const badge = document.getElementById('loadStatusBadge');
+  const showBadge = (txt,cls)=>{ badge.textContent=txt; badge.className='pill '+cls; badge.style.display='inline-block';
+    setTimeout(()=>{ badge.style.display='none'; }, 6000); };
+  try{
+    const proj = JSON.parse(await file.text());
+    if(proj.aState && proj.traceShape){
+      // This is a bracing-visualizer-format file -- either exported from
+      // here via "Export as bracing-tool project…", or an actual project
+      // from the paired visualizer tool. Not this tool's own session
+      // format (no MS/DS/GEN), so pull in what's usable rather than
+      // silently doing nothing or showing a confusing generic error.
+      applyVisualizerFormatProject(proj);
+      showBadge('Loaded a bracing-visualizer-format file (geometry + braces only, no targets/data)', 'warn');
+      return;
+    }
+    if(!('GEO' in proj) && !('MS' in proj) && !('DS' in proj) && !('GEN' in proj)){
+      showBadge("This doesn't look like a project file saved from this tool.", 'err');
+      return;
+    }
+    Object.assign(GEO, proj.GEO||{});
+    if(!(GEO.bgImage instanceof HTMLImageElement)) GEO.bgImage = null; // strip any non-image junk from an older save
+    if(!GEO.bridgePts || GEO.bridgePts.length<2) resetBridgeRect(); // older save, before traced bridge shapes existed
+    if(proj.MS) MS.modes = proj.MS.modes||[];
+    if(proj.DS){
+      DS.nodes = proj.DS.nodes||[];
+      DS.frf = deserializeFrf(proj.DS.frf);
+      buildComposite(); // rebuild the derived spectrum from the restored FRF curves
+    }
+    if(proj.GEN) GEN.results = proj.GEN.results||{};
+    if(proj.title) document.getElementById('projectNameInput').value = proj.title;
+    document.getElementById('geoLx').value = Math.round(GEO.Lx*1000);
+    document.getElementById('geoLy').value = Math.round(GEO.Ly*1000);
+    document.getElementById('geoH').value = (GEO.h*1000).toFixed(2);
+    document.getElementById('geoE').value = (GEO.E/1e9).toFixed(1);
+    document.getElementById('geoRho').value = GEO.rho;
+    renderNodeTable(); renderModeTable(); forceGeoRedraw(); drawSpectrum(); renderResults();
+    showBadge('Project loaded.', 'ok');
+  }catch(err){ showBadge('Could not load project: '+err.message, 'err'); }
+};
+/* A canvas that's hidden (inactive tab) at the moment it's drawn reports
+   zero size, so anything drawn onto it right then is invisible and stays
+   that way until something else forces a redraw -- which is exactly what
+   made a loaded outline seem to vanish until the outline tool was
+   clicked (that just happened to be the first thing that triggered a
+   redraw afterward). The ResizeObserver below is the real fix: it
+   catches the canvas whenever it actually becomes visible again and
+   redraws automatically, regardless of what path got it there. This
+   just also tries immediately in case the tab's already active. */
+function forceGeoRedraw(){ drawGeoCanvas(); }
+if(window.ResizeObserver){
+  new ResizeObserver(()=>{ drawGeoCanvas(); }).observe(document.getElementById('geoCanvas'));
+}
+
+/* Initial paint */
+drawGeoCanvas();
+window.addEventListener('resize', ()=>{ drawGeoCanvas(); drawSpectrum(); });
+checkIncomingHandoff();
+
+
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     PYTHON OPTIMIZATION ENGINE (numpy + scipy via PyScript/Pyodide)
+════════════════════════════════════════════════════════════════════════════ -->
+<script type="py" config='{"packages": ["numpy", "scipy"]}' async>
+# ══════════════════════════════════════════════════════════════════════════
+# INVERSE BRACING DESIGN ENGINE (Pyodide / numpy+scipy)
+# Plate physics (grid build, brace mass mapping, brace bending-stiffness
+# coupling) reuses the same finite-difference biharmonic-plate model as the
+# paired bracing visualizer tool. New here: static point-load deflection
+# solve, MAC shape comparison against measured node data, four bracing
+# pattern encoders, and a simulated-annealing search over each.
+# ══════════════════════════════════════════════════════════════════════════
+import json, math, random, asyncio
+import numpy as np
+from scipy import sparse
+from scipy.sparse.linalg import eigsh, spsolve
+from scipy.spatial import cKDTree
+import js
+from pyscript.ffi import create_proxy
+
+# ── Geometry helpers ────────────────────────────────────────────────────
+def points_in_polygon(px, py, poly_pts):
+    inside = np.zeros(px.shape, dtype=bool)
+    xj, yj = poly_pts[-1]
+    for xi, yi in poly_pts:
+        cond = (yi > py) != (yj > py)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            xint = (xj - xi) * (py - yi) / (yj - yi) + xi
+        toggle = cond & (px < xint)
+        inside = np.where(toggle, ~inside, inside)
+        xj, yj = xi, yi
+    return inside
+
+def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
+    poly_phys = [(p['fx'] * Lx, p['fy'] * Ly) for p in poly_frac]
+    xs = [p[0] for p in poly_phys]; ys = [p[1] for p in poly_phys]
+    bbx0, bbx1 = min(xs), max(xs); bby0, bby1 = min(ys), max(ys)
+    dd = max(bbx1 - bbx0, bby1 - bby0) / (GN - 1)
+    nx = round((bbx1 - bbx0) / dd) + 1
+    ny = round((bby1 - bby0) / dd) + 1
+    poly_local = [(x - bbx0, y - bby0) for x, y in poly_phys]
+    hx_local = hole_cx * Lx - bbx0; hy_local = hole_cy * Ly - bby0
+    hr = hole_r * min(Lx, Ly)
+
+    ii, jj = np.meshgrid(np.arange(nx), np.arange(ny))
+    X = (ii * dd).ravel(); Y = (jj * dd).ravel()
+    poly_only_flat = points_in_polygon(X, Y, poly_local)
+    dist_hole = np.hypot(X - hx_local, Y - hy_local)
+    inside_flat = poly_only_flat & (dist_hole >= hr)
+    in_poly = poly_only_flat.reshape(ny, nx)
+    inside = inside_flat.reshape(ny, nx)
+
+    pad = np.zeros((ny + 2, nx + 2), dtype=bool)
+    pad[1:-1, 1:-1] = in_poly
+    all_in_poly = in_poly & pad[1:-1, 0:-2] & pad[1:-1, 2:] & pad[0:-2, 1:-1] & pad[2:, 1:-1]
+    dof_mask = (inside & all_in_poly) if bc_mode == 'ss' else inside
+
+    node_id = -np.ones((ny, nx), dtype=np.int64)
+    nodes_j, nodes_i = np.nonzero(dof_mask)
+    N = nodes_i.size
+    node_id[nodes_j, nodes_i] = np.arange(N)
+    if N < 20:
+        return {'N': N, 'nx': nx, 'ny': ny, 'dd': dd}
+
+    coef = 1.0 / (dd * dd)
+    diag = np.zeros(N)
+    rows_off, cols_off, vals_off = [], [], []
+    for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        ni = nodes_i + di; nj = nodes_j + dj
+        in_bounds = (ni >= 0) & (ni < nx) & (nj >= 0) & (nj < ny)
+        nb_has_material = np.zeros(N, dtype=bool)
+        nb_has_material[in_bounds] = inside[nj[in_bounds], ni[in_bounds]]
+        nb_in_poly = np.zeros(N, dtype=bool)
+        nb_in_poly[in_bounds] = in_poly[nj[in_bounds], ni[in_bounds]]
+        has_nb = np.nonzero(nb_has_material)[0]
+        if has_nb.size:
+            nb_id = node_id[nj[has_nb], ni[has_nb]]
+            has_dof = nb_id >= 0
+            sel = has_nb[has_dof]
+            rows_off.append(sel); cols_off.append(nb_id[has_dof]); vals_off.append(np.full(sel.shape, -coef))
+            diag[has_nb] += coef
+        missing_outer = ~nb_in_poly
+        if bc_mode == 'ss':
+            diag[missing_outer] += coef
+    rows_off.append(np.arange(N)); cols_off.append(np.arange(N)); vals_off.append(diag)
+    L = sparse.coo_matrix((np.concatenate(vals_off), (np.concatenate(rows_off), np.concatenate(cols_off))), shape=(N, N)).tocsr()
+    L.sum_duplicates()
+    return {'L': L, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
+            'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id,
+            'inside': inside, 'bbx0': bbx0, 'bby0': bby0}
+
+def _dim_at(center, tip, t):
+    """Cross-section dimension at position t in [0,1] along a brace: tip
+    value at both ends, center value at the midpoint, parabolic in between.
+    Lets width and height taper independently and by different amounts."""
+    tip = center if tip is None else tip
+    return tip + (center - tip) * 4.0 * t * (1.0 - t)
+
+def _sample_brace(b, Lx, Ly, NS=10):
+    a, z = b['pts'][0], b['pts'][1]
+    ax, ay = a['fx'] * Lx, a['fy'] * Ly
+    zx, zy = z['fx'] * Lx, z['fy'] * Ly
+    is_curve = (b.get('type') == 'curve') and b.get('cp') is not None
+    if is_curve:
+        cpx, cpy = b['cp']['fx'] * Lx, b['cp']['fy'] * Ly
+    pts = []
+    for i in range(NS + 1):
+        t = i / NS
+        if not is_curve:
+            x = ax + t * (zx - ax); y = ay + t * (zy - ay)
+            sl = math.hypot(zx - ax, zy - ay) / NS
+        else:
+            x = (1 - t) ** 2 * ax + 2 * (1 - t) * t * cpx + t ** 2 * zx
+            y = (1 - t) ** 2 * ay + 2 * (1 - t) * t * cpy + t ** 2 * zy
+            dt = 1.0 / NS
+            t0, t1 = max(0.0, t - dt / 2), min(1.0, t + dt / 2)
+            x0 = (1-t0)**2*ax + 2*(1-t0)*t0*cpx + t0**2*zx; y0 = (1-t0)**2*ay + 2*(1-t0)*t0*cpy + t0**2*zy
+            x1 = (1-t1)**2*ax + 2*(1-t1)*t1*cpx + t1**2*zx; y1 = (1-t1)**2*ay + 2*(1-t1)*t1*cpy + t1**2*zy
+            sl = math.hypot(x1 - x0, y1 - y0)
+        pts.append((x, y, sl, t))
+    return pts
+
+def braces_to_masses(braces, Lx, Ly):
+    xs, ys, ms = [], [], []
+    for b in braces:
+        wC = b['width']/1000.0; wT = (b['width'] if b.get('widthTip') is None else b['widthTip'])/1000.0
+        hC = b['height']/1000.0; hT = (b['height'] if b.get('heightTip') is None else b['heightTip'])/1000.0
+        for x, y, sl, t in _sample_brace(b, Lx, Ly):
+            A = _dim_at(wC, wT, t) * _dim_at(hC, hT, t)
+            m = b.get('density', 420) * A * sl
+            if m > 0:
+                xs.append(min(0.999, max(0.001, x/Lx))*Lx); ys.append(min(0.999, max(0.001, y/Ly))*Ly); ms.append(m)
+    return xs, ys, ms
+
+def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, NS=10):
+    node_local = np.stack([grid['nodes_i']*grid['dd'], grid['nodes_j']*grid['dd']], axis=1)
+    tree = cKDTree(node_local)
+    rows, cols, vals = [], [], []
+    dd = grid['dd']
+    for b in braces:
+        wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
+        hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
+        modulus = b.get('modulus', 10e9)
+        pts = _sample_brace(b, Lx, Ly, NS)
+        xy = np.array([[p[0]-grid['bbx0'], p[1]-grid['bby0']] for p in pts])
+        _, idxs = tree.query(xy)
+        for k in range(1, len(pts)-1):
+            i0, i1, i2 = int(idxs[k-1]), int(idxs[k]), int(idxs[k+1])
+            if i0 == i1 or i1 == i2 or i0 == i2: continue
+            x0,y0,_,_ = pts[k-1]; x1,y1,_,tk = pts[k]; x2,y2,_,_ = pts[k+1]
+            hL = math.hypot(x1-x0, y1-y0); hR = math.hypot(x2-x1, y2-y1)
+            if hL <= 0 or hR <= 0: continue
+            ds = 0.5*(hL+hR)
+            # Local cross-section at this point, so a tapered brace is
+            # correctly softer near its tips and stiffer through its middle.
+            wk = _dim_at(wC, wT, tk); hk = _dim_at(hC, hT, tk)
+            EI = modulus * (wk * hk**3 / 12.0)
+            a0 = 2.0/(hL*(hL+hR)); a1 = -2.0/(hL*hR); a2 = 2.0/(hR*(hL+hR))
+            coef = (EI*ds)/(dd*dd)
+            idx3=[i0,i1,i2]; av=[a0,a1,a2]
+            for p in range(3):
+                for q in range(3):
+                    rows.append(idx3[p]); cols.append(idx3[q]); vals.append(coef*av[p]*av[q])
+    N = grid['N']
+    if not rows: return sparse.csr_matrix((N,N))
+    K = sparse.coo_matrix((vals,(rows,cols)), shape=(N,N)).tocsr()
+    K.sum_duplicates()
+    return K
+
+def _map_to_nodes(grid, xs, ys, weights):
+    N = grid['N']; out = np.zeros(N)
+    if not xs: return out
+    node_local = np.stack([grid['nodes_i']*grid['dd'], grid['nodes_j']*grid['dd']], axis=1)
+    tree = cKDTree(node_local)
+    pts_local = np.stack([np.array(xs)-grid['bbx0'], np.array(ys)-grid['bby0']], axis=1)
+    _, idx = tree.query(pts_local)
+    np.add.at(out, idx, np.array(weights))
+    return out
+
+def sample_field_at_points(grid, node_vals, xs_m, ys_m):
+    """Bilinear-sample a nodal solution at arbitrary physical (x,y) points
+    (used both for the static load footprint and for comparing simulated
+    mode shapes against measured node positions -- MAC)."""
+    nx, ny, dd = grid['nx'], grid['ny'], grid['dd']
+    field = np.full((ny, nx), np.nan)
+    field[grid['nodes_j'], grid['nodes_i']] = node_vals
+    filled = np.nan_to_num(field)
+    have = (~np.isnan(field)).astype(float)
+    out = np.zeros(len(xs_m))
+    for k in range(len(xs_m)):
+        fx = (xs_m[k]-grid['bbx0'])/dd; fy=(ys_m[k]-grid['bby0'])/dd
+        i0,j0 = int(np.floor(fx)), int(np.floor(fy))
+        tx,ty = fx-i0, fy-j0
+        if i0<0 or j0<0 or i0>=nx-1 or j0>=ny-1:
+            i0=max(0,min(nx-2,i0)); j0=max(0,min(ny-2,j0)); tx=max(0,min(1,tx)); ty=max(0,min(1,ty))
+        w00=(1-tx)*(1-ty); w10=tx*(1-ty); w01=(1-tx)*ty; w11=tx*ty
+        num = (filled[j0,i0]*w00 + filled[j0,i0+1]*w10 + filled[j0+1,i0]*w01 + filled[j0+1,i0+1]*w11)
+        den = (have[j0,i0]*w00 + have[j0,i0+1]*w10 + have[j0+1,i0]*w01 + have[j0+1,i0+1]*w11)
+        out[k] = num/den if den>1e-9 else 0.0
+    return out
+
+def mac(a, b):
+    a = np.asarray(a); b = np.asarray(b)
+    na = np.linalg.norm(a); nb = np.linalg.norm(b)
+    if na < 1e-12 or nb < 1e-12: return 0.0
+    return float((np.dot(a,b)**2) / (np.dot(a,a)*np.dot(b,b)))
+
+# ── Core FEM evaluation: eigenmodes + static deflection under bridge load ──
+# ── Geometry validity: keep braces on the actual body and off the hole ──
+def brace_geometry_penalty(braces, outline_frac, hole_cx, hole_cy, hole_r, Lx, Ly, NS=14):
+    """Penalizes any brace material that falls outside the traced body
+    outline, or on/near the soundhole. This is enforced the same way for
+    every pattern (X-brace, fan, falcate, novel) via the search objective,
+    rather than hard-coding per-pattern clipping -- so it also protects
+    against any future pattern that might otherwise wander off the top."""
+    if not outline_frac or len(outline_frac) < 3:
+        return 0.0
+    poly_phys = [(p['fx']*Lx, p['fy']*Ly) for p in outline_frac]
+    hx, hy = hole_cx*Lx, hole_cy*Ly
+    hr = hole_r*min(Lx, Ly)
+    hole_margin = hr + 0.004  # ~4mm clearance around the hole rim
+    penalty = 0.0
+    for b in braces:
+        xs, ys = [], []
+        for x, y, sl, t in _sample_brace(b, Lx, Ly, NS):
+            xs.append(x); ys.append(y)
+        xs_a, ys_a = np.array(xs), np.array(ys)
+        inside = points_in_polygon(xs_a, ys_a, poly_phys)
+        n_out = int(np.sum(~inside))
+        if n_out:
+            penalty += n_out * 180.0
+        d_hole = np.hypot(xs_a-hx, ys_a-hy)
+        over_hole = np.clip(hole_margin - d_hole, 0, None)
+        if np.any(over_hole > 0):
+            penalty += float(np.sum((over_hole/max(hole_margin,1e-6))**2)) * 160.0
+    return penalty
+
+def brace_overlap_penalty(braces, Lx, Ly, NS=10):
+    """Penalizes braces whose material runs on top of / alongside another
+    brace's material for any real stretch -- redundant stiffness in one
+    spot instead of spreading structure (and mass) across the top where it
+    can actually do something to the mode shapes. Only the INTERIOR of
+    each brace is checked (endpoints excluded): several braces sharing a
+    joint -- a fan's rays meeting at one hub, braces meeting at a strut --
+    is a deliberate, normal structural choice, not the redundant parallel
+    stacking this is meant to catch. A brief single-point crossing (like
+    the two arms of an X-brace) still only costs a little either way;
+    two braces running alongside each other for real length costs a lot."""
+    if len(braces) < 2:
+        return 0.0
+    samples = []
+    for b in braces:
+        pts = _sample_brace(b, Lx, Ly, NS)
+        xs = np.array([p[0] for p in pts]); ys = np.array([p[1] for p in pts])
+        if len(xs) > 2:
+            xs, ys = xs[1:-1], ys[1:-1]  # drop the two endpoints
+        wC = b.get('width', 3.0); wT = b.get('widthTip', wC)
+        w = (wC if wT is None else max(wC, wT)) / 1000.0
+        samples.append((xs, ys, w))
+    penalty = 0.0
+    n = len(samples)
+    for i in range(n):
+        xi, yi, wi = samples[i]
+        for j in range(i+1, n):
+            xj, yj, wj = samples[j]
+            d = np.hypot(xi[:, None]-xj[None, :], yi[:, None]-yj[None, :])
+            min_sep = (wi+wj)/2.0 + 0.003  # ~3mm clearance so edges don't touch
+            over = np.clip(min_sep - d, 0, None)
+            if np.any(over > 0):
+                penalty += float(np.sum((over/max(min_sep,1e-6))**2)) * 15.0
+    return penalty
+
+def evaluate_design(geo, braces, n_modes_needed, meas_xy=None):
+    Lx, Ly, h = geo['Lx'], geo['Ly'], geo['h']
+    E, rho, nu = geo['E'], geo['rho'], geo['nu']
+    D_flex = E*h**3/(12*(1-nu**2))
+    grid = build_grid(geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly, geo['bcMode'], geo['GN'])
+    N = grid['N']
+    if N < 20:
+        return {'ok': False, 'reason': 'grid_too_coarse'}
+
+    geom_penalty = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
+    geom_penalty += brace_overlap_penalty(braces, Lx, Ly)
+
+    mx, my, mm = braces_to_masses(braces, Lx, Ly)
+    braceM = _map_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
+    total_brace_mass_g = sum(mm)*1000.0
+    K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid)
+    L = grid['L']
+    K = D_flex*(L.T @ L) + K_brace
+    K = (K+K.T)*0.5
+    M = sparse.diags(rho*h + braceM)
+
+    # ── Eigenmodes ──
+    n_request = min(n_modes_needed+6, N-2)
+    sigma = (2*math.pi*1.0)**2
+    try:
+        vals, vecs = eigsh(K.tocsc(), k=max(1,n_request), M=M.tocsc(), sigma=sigma, which='LM')
+    except Exception as exc:
+        return {'ok': False, 'reason': f'eigsh_failed:{exc}'}
+    order = np.argsort(vals)
+    vals, vecs = vals[order], vecs[:, order]
+    freqs_all = np.sqrt(np.clip(vals,0,None))/(2*math.pi)
+    chosen = []
+    for idx, f in enumerate(freqs_all):
+        if f <= 5: continue
+        if any(abs(f-freqs_all[c])/f < 0.005 for c in chosen): continue
+        chosen.append(idx)
+        if len(chosen) >= n_modes_needed: break
+    freqs_out = [float(freqs_all[c]) for c in chosen]
+
+    meas_shapes = None
+    if meas_xy is not None and len(meas_xy[0]):
+        meas_shapes = []
+        for c in chosen:
+            shp = sample_field_at_points(grid, vecs[:,c], meas_xy[0], meas_xy[1])
+            peak = np.max(np.abs(shp)) or 1.0
+            meas_shapes.append((shp/peak).tolist())
+
+    # ── Static deflection under bridge/string load ──
+    # Spread the load uniformly over the bridge's actual footprint --
+    # traced by hand (a real, possibly irregular shape) if given, else the
+    # rectangle from length/depth, else the nearest single node -- rather
+    # than concentrating it at a point. A point load lets whichever bit of
+    # stiffness happens to sit right there absorb it, which understates
+    # how the top actually responds under a real bridge; string tension
+    # loads the whole bridge footprint, not one spot on it.
+    bx = geo['bridgeFx']*Lx; by = geo['bridgeFy']*Ly
+    node_x = grid['nodes_i']*grid['dd']+grid['bbx0']
+    node_y = grid['nodes_j']*grid['dd']+grid['bby0']
+    bridge_pts = geo.get('bridgePts') or []
+    idxs = np.array([], dtype=int)
+    if len(bridge_pts) >= 3:
+        bridge_poly = [(p['fx']*Lx, p['fy']*Ly) for p in bridge_pts]
+        inside = points_in_polygon(node_x, node_y, bridge_poly)
+        idxs = np.nonzero(inside)[0]
+    if idxs.size == 0:
+        half_depth = (geo.get('bridgeDepthMm', 12)/1000.0)/2.0   # along length (fx)
+        half_len = (geo.get('bridgeLenMm', 155)/1000.0)/2.0      # along width (fy)
+        in_footprint = (np.abs(node_x-bx) <= half_depth) & (np.abs(node_y-by) <= half_len)
+        idxs = np.nonzero(in_footprint)[0]
+    if idxs.size == 0:
+        # Footprint smaller than one grid cell at this resolution (or the
+        # bridge landed off the solved region) -- fall back to the single
+        # nearest node so this still solves instead of failing.
+        node_local = np.stack([node_x, node_y], axis=1)
+        tree = cKDTree(node_local)
+        _, nearest = tree.query([bx, by], k=1)
+        idxs = np.atleast_1d(nearest)
+    n_idx = idxs.shape[0]
+    # Strings break over the saddle at an angle rather than pulling
+    # straight down, which also twists the bridge -- more force presses
+    # the neck-side edge of the footprint, less (or an uplift) on the
+    # tail-side edge. Modeled as a moment superposed on the uniform load,
+    # linearly distributed across the footprint's depth (its extent along
+    # the body's length) exactly like combined axial+bending stress on a
+    # beam cross-section. This is a deliberately rough approximation --
+    # see the UI note next to the torque input.
+    node_x_idx = node_x[idxs]
+    cx_local = float(np.mean(node_x_idx))
+    dx_local = node_x_idx - cx_local
+    denom = float(np.sum(dx_local**2))
+    # A moment needs force applied at spatially separated points. If the
+    # bridge footprint is shallower than the grid spacing, every node in
+    # it collapses onto the SAME column and there's nothing to spread a
+    # moment across at all. And with only TWO columns, any real-sized
+    # torque saturates almost immediately (everything clips to one side,
+    # see below) rather than behaving as a smooth, graduated distribution
+    # -- so this requires at least three distinct columns to call it
+    # meaningfully resolved. Report it either way: torque>0 with little
+    # or no visible effect should be explainable, not read as a finding
+    # that torque doesn't matter here.
+    n_cols = int(np.unique(np.round(node_x_idx / max(grid['dd'],1e-9))).size)
+    torque_resolved = bool(n_cols >= 3)
+    M = geo.get('bridgeTorqueNmm', 0.0) / 1000.0  # N·mm -> N·m
+    base = geo['loadN']/n_idx
+    f_i = np.full(n_idx, base) + (M*dx_local/denom if denom > 1e-12 else np.zeros(n_idx))
+    # A large enough torque could ask a node to pull UP rather than push
+    # down, which this simple superposition can't represent (that needs a
+    # proper moment/rotation boundary condition, not just a force) --
+    # clip at zero and rescale to preserve the total applied force so the
+    # solve stays physically sane instead of going unstable.
+    f_i = np.clip(f_i, 0.0, None)
+    total_f = float(np.sum(f_i))
+    if total_f > 1e-12:
+        f_i = f_i * (geo['loadN']/total_f)
+    else:
+        f_i = np.full(n_idx, base)
+    w = f_i / geo['loadN'] if geo['loadN'] else np.full(n_idx, 1.0/n_idx)
+    F = np.zeros(N)
+    # K is in point-collocation form (D∇⁴w = q, q a pressure in N/m²), same
+    # as the brace-mass lumping above -- a concentrated point force has to
+    # be converted to an equivalent pressure by dividing by the nodal area
+    # (~dd²), or it solves correctly but comes out many orders of magnitude
+    # too small (this was silently rounding every deflection to 0.000 mm).
+    F[idxs] = f_i / (grid['dd']**2)
+    diagK = K.diagonal()
+    reg = 1e-8*np.mean(np.abs(diagK))
+    Kreg = (K + sparse.diags(np.full(N, reg))).tocsc()
+    try:
+        defl = spsolve(Kreg, F)
+    except Exception:
+        defl = np.zeros(N)
+    defl_at_bridge = float(np.average(defl[idxs], weights=w))
+    defl_max = float(np.max(np.abs(defl))) if N else 0.0
+
+    return {
+        'ok': True, 'freqs': freqs_out, 'measShapes': meas_shapes,
+        'deflBridgeMm': abs(defl_at_bridge)*1000.0, 'deflMaxMm': abs(defl_max)*1000.0,
+        'massG': total_brace_mass_g, 'nNodes': N, 'geomPenalty': geom_penalty,
+        'torqueResolved': torque_resolved, 'torqueRequested': abs(geo.get('bridgeTorqueNmm',0.0)) > 1e-9,
+    }
+
+# ── Objective ────────────────────────────────────────────────────────────
+def objective(result, targets, defl_limit_mm, mass_weight, mass_norm_g=40.0):
+    if not result.get('ok'):
+        return 1e6
+    freqs = result['freqs']; shapes = result.get('measShapes')
+    cost = 0.0
+    for i, tgt in enumerate(targets):
+        f_sim = freqs[i] if i < len(freqs) else None
+        if f_sim is None:
+            cost += 50.0*tgt.get('weight',1.0)
+            continue
+        err = abs(f_sim - tgt['freq'])
+        tol = tgt.get('tol',5.0)
+        # No flat deadband inside tolerance: a target that's merely
+        # "within tolerance" costs less than one that's exactly on target,
+        # not the same (zero) as before. Tested empirically against the
+        # old all-or-nothing version on a 6-target case -- this roughly
+        # doubled how many targets landed within tolerance and halved
+        # total error, because the old version gave the search zero
+        # incentive to keep refining a mode once it merely cleared the
+        # bar, even if doing so would've helped a mode that hadn't.
+        inside = min(err, tol)
+        outside = max(0.0, err - tol)
+        cost += tgt.get('weight',1.0) * ((inside/max(1.0,tgt['freq']))**2 * 40.0 + (outside/max(1.0,tgt['freq']))**2 * 400.0)
+        if tgt.get('matchShape') and shapes is not None and i < len(shapes) and tgt.get('measShape') is not None:
+            m = mac(shapes[i], tgt['measShape'])
+            cost += tgt.get('weight',1.0) * (1.0-m) * 8.0
+    over_defl = max(0.0, result['deflBridgeMm']/max(0.05,defl_limit_mm) - 1.0)
+    # Deflection is closer to a real structural limit than a soft
+    # preference -- weighted much harder than before, with an added cubic
+    # term so it escalates steeply rather than staying comparable to a
+    # single frequency-matching term even at fairly large violations.
+    cost += (over_defl**2) * 900.0 + (over_defl**3) * 700.0
+    cost += mass_weight * (result['massG']/mass_norm_g)
+    cost += result.get('geomPenalty', 0.0)
+    return cost
+
+# ── Pattern parameter encoders -> brace list ─────────────────────────────
+def _clip_to_outline(fx, fy):
+    return clamp01(fx), clamp01(fy)
+def clamp01(v): return max(0.02, min(0.98, v))
+
+# Brace material defaults -- overridden per-run from the payload's
+# braceModulus/braceDensity so it's actually settable from the UI, without
+# threading it through every encoder's parameter list.
+BRACE_MATERIAL = {'modulus': 10e9, 'density': 420.0}
+# Checked at the top of every search iteration so a run can be stopped
+# mid-way (e.g. the person spots a setup mistake) instead of having to
+# wait out however many iterations are left.
+CANCEL_FLAG = {'stop': False}
+
+def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,height_tip=None,width_tip=None):
+    modulus = BRACE_MATERIAL['modulus'] if modulus is None else modulus
+    density = BRACE_MATERIAL['density'] if density is None else density
+    b = {'type':'curve' if curve_cp else 'straight',
+         'pts':[{'fx':clamp01(x1),'fy':clamp01(y1)},{'fx':clamp01(x2),'fy':clamp01(y2)}],
+         'width':max(1.5,width), 'height':max(3.0,height), 'modulus':modulus, 'density':density,
+         'widthTip': (max(1.0,width_tip) if width_tip is not None else None),
+         'heightTip': (max(2.0,height_tip) if height_tip is not None else None)}
+    if curve_cp: b['cp'] = {'fx':clamp01(curve_cp[0]), 'fy':clamp01(curve_cp[1])}
+    return b
+
+def xbrace_encode(p):
+    """Fixed X-brace layout (upper transverse bar, small upper-bout support
+    braces above the soundhole, main X crossing below it, a bridge-area
+    reinforcement, two lower 'finger' braces, and a small tail-block
+    brace) -- matches a standard steel-string X-brace plan including the
+    small secondary braces that shape the response rather than just the
+    main structural members. Only cross-section dimensions are searched;
+    every position is fixed."""
+    h,w,th,tw,fh,fw,sh,sw,wTipFrac,hTipFrac = p
+    wTip, hTip = w*wTipFrac, h*hTipFrac
+    return [
+        make_brace(0.17,0.22,0.17,0.78,th,tw),                     # upper transverse bar
+        make_brace(0.20,0.18,0.85,0.82,h,w,height_tip=hTip,width_tip=wTip),   # main X arm 1
+        make_brace(0.20,0.82,0.85,0.18,h,w,height_tip=hTip,width_tip=wTip),   # main X arm 2
+        make_brace(0.63,0.35,0.63,0.65,th,tw),                     # bridge-area reinforcement
+        make_brace(0.52,0.50,0.90,0.90,fh,fw),                     # lower finger brace 1
+        make_brace(0.52,0.50,0.90,0.10,fh,fw),                     # lower finger brace 2
+        make_brace(0.17,0.30,0.28,0.50,sh,sw),                     # small support brace above the hole, bass side
+        make_brace(0.17,0.70,0.28,0.50,sh,sw),                     # small support brace above the hole, treble side
+        make_brace(0.94,0.44,0.94,0.56,sh*0.8,sw*0.8),             # small tail-block brace
+    ]
+XBRACE_BOUNDS = [(5,22),(2,12),(4,16),(2,10),(3,14),(2,9),(3,10),(2,7),(0.12,1.0),(0.12,1.0)]
+
+def fan_encode(p, n_braces):
+    """Fixed classical fan layout: two closing bars above the soundhole
+    (matching the reference plan's pair of crossbars near the neck block,
+    not just one), N rays fanning from a hub below the hole out to the
+    lower bout, a bridge-area patch, and a small tail brace -- matches a
+    standard 5-9 rayed fan-braced classical top. Only cross-section
+    dimensions are searched; ray geometry and hub position are fixed."""
+    h,w,barh,barw,th,tw,wTipFrac,hTipFrac = p
+    wTip, hTip = w*wTipFrac, h*hTipFrac
+    hubx, huby = 0.52, 0.5
+    fanspread, lenscale = 122.0, 0.37
+    braces = [
+        make_brace(0.12,0.16,0.12,0.84,barh,barw),  # upper closing bar, near the neck block
+        make_brace(0.20,0.24,0.20,0.76,th,tw),      # second, smaller closing bar -- tunes the upper-bout response
+    ]
+    for i in range(n_braces):
+        t = (i/(max(1,n_braces-1))) - 0.5 if n_braces>1 else 0.0
+        ang = 90 + t*fanspread
+        rad = math.radians(ang)
+        ex = hubx + math.sin(rad)*lenscale
+        ey = huby + math.cos(rad)*lenscale
+        braces.append(make_brace(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
+    braces.append(make_brace(0.62,0.32,0.62,0.68,th,tw))   # bridge-area patch
+    braces.append(make_brace(0.92,0.42,0.92,0.58,th,tw))   # small tail brace
+    return braces
+def fan_bounds(n_braces):
+    return [(4,20),(2,12),(3,14),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
+
+def falcate_encode(p):
+    """Fixed Kasha/Smallman-style falcate layout, corrected against actual
+    builds: a 'wine-glass' V-strut around the soundhole that continues as
+    a short spine down into the bridge patch (the earlier version jumped
+    straight from the V to the patch with a gap), two mirror-symmetric
+    falcate (sickle) braces sweeping from the bridge area across the
+    lower bout with a much thinner tapered tip (approximating the
+    splayed/fanned ends real falcate braces are finished with), and a
+    small mirrored pair of finishing braces near the tail instead of one
+    off-axis nub. Only cross-section dimensions are searched; every
+    position/curve is fixed."""
+    h,w,bow,vh,vw,th,tw,tailh,tailw,wTipFrac,hTipFrac = p
+    wTip, hTip = w*wTipFrac, h*hTipFrac
+    def curved(x1,y1,x2,y2,bow_amt,hh,ww,htip=None,wtip=None):
+        mx,my = (x1+x2)/2, (y1+y2)/2
+        dx,dy = x2-x1, y2-y1
+        L = math.hypot(dx,dy) or 1e-6
+        nx_,ny_ = -dy/L, dx/L
+        return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt),height_tip=htip,width_tip=wtip)
+    return [
+        make_brace(0.07,0.30,0.30,0.50,vh,vw),          # V-strut, bass side
+        make_brace(0.07,0.70,0.30,0.50,vh,vw),          # V-strut, treble side
+        curved(0.28,0.50,0.58,0.50,0.28,vh*0.8,vw*0.8), # spine, V-point down into the bridge patch -- curved to clear the soundhole rather than crossing it
+        make_brace(0.61,0.34,0.61,0.66,th,tw),          # bridge-area patch
+        curved(0.57,0.42,0.92,0.14,-bow,h,w,hTip,wTip), # main falcate sweep, bass side
+        curved(0.57,0.58,0.92,0.86, bow,h,w,hTip,wTip), # main falcate sweep, treble side
+        make_brace(0.90,0.44,0.95,0.50,tailh,tailw),    # small tail brace, bass side
+        make_brace(0.90,0.56,0.95,0.50,tailh,tailw),    # small tail brace, treble side
+    ]
+FALCATE_BOUNDS = [(5,20),(2,12),(0.05,0.25),(3,12),(2,8),(3,14),(2,9),(2,9),(2,8),(0.1,1.0),(0.1,1.0)]
+
+
+# ── Simulated annealing over a continuous parameter vector ──────────────
+async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm, mass_weight, iters, progress_cb, label, x0=None, temp_scale=1.0):
+    n = len(bounds)
+    x = np.array(x0) if x0 is not None else np.array([random.uniform(lo,hi) for lo,hi in bounds])
+    def clip(v): return np.array([min(hi,max(lo,vv)) for vv,(lo,hi) in zip(v,bounds)])
+    best_x, best_cost, best_result = x.copy(), 1e18, None
+    cur_cost = 1e18
+    n_modes = len(targets)
+    for it in range(iters):
+        if CANCEL_FLAG['stop']:
+            break
+        T = temp_scale * (0.995**it)
+        step = np.array([(hi-lo) for lo,hi in bounds]) * (0.25*T + 0.02)
+        cand = clip(x + np.random.normal(0,1,n)*step) if it>0 else x
+        braces = encode_fn(cand)
+        result = evaluate_design(geo, braces, n_modes, meas_xy)
+        for i,t in enumerate(targets):
+            if result.get('ok') and result.get('measShapes') and i < len(result['measShapes']):
+                pass
+        cost = objective(result, targets, defl_limit_mm, mass_weight)
+        accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
+        if accept:
+            x, cur_cost = cand, cost
+        if cost < best_cost:
+            best_cost, best_x, best_result = cost, cand.copy(), result
+        if it % max(1,iters//25) == 0 or it==iters-1:
+            progress_cb(label, it, iters, best_cost, best_result)
+            await asyncio.sleep(0)
+    if best_result is None:
+        best_result = evaluate_design(geo, encode_fn(best_x), n_modes, meas_xy)
+        best_cost = objective(best_result, targets, defl_limit_mm, mass_weight)
+    return best_x, best_cost, best_result, encode_fn(best_x)
+
+# ── Simulated annealing over a variable-length free brace topology ──────
+async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0):
+    """Unconstrained search has no reason to ever land on a left-right
+    symmetric layout by chance -- a symmetric configuration is a
+    vanishingly small slice of the full search space, so pure random
+    mutation essentially never produces one. Real instrument bracing is
+    almost always bilaterally symmetric (asymmetric mode shapes change
+    the radiation pattern and skew the bass/treble balance), so when
+    symmetric=True the search only ever touches ONE half of the plate
+    (fy < 0.5) and every brace's mirror image is added automatically at
+    evaluation time -- symmetry is guaranteed by construction, not hoped
+    for. max_braces is interpreted as the total (mirrored) count."""
+    half_cap = max(1, max_braces//2) if symmetric else max_braces
+    fy_lo, fy_hi = (0.15, 0.47) if symmetric else (0.15, 0.85)
+
+    def mirror_brace(b):
+        m = dict(b, pts=[{'fx':pp['fx'], 'fy':1.0-pp['fy']} for pp in b['pts']])
+        if b.get('cp'): m['cp'] = {'fx':b['cp']['fx'], 'fy':1.0-b['cp']['fy']}
+        return m
+    def expand(bl):
+        if not symmetric: return bl
+        out = []
+        for b in bl:
+            out.append(b); out.append(mirror_brace(b))
+        return out
+
+    def rand_brace():
+        x1,y1 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
+        x2,y2 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
+        h = random.uniform(4,22); w = random.uniform(2,12)
+        b = make_brace(x1,y1,x2,y2,h,w, height_tip=h*random.uniform(0.4,1.0), width_tip=w*random.uniform(0.4,1.0))
+        if random.random() < 0.4:
+            mx,my = (x1+x2)/2, (y1+y2)/2
+            dx,dy = x2-x1, y2-y1; L = math.hypot(dx,dy) or 1e-6
+            nx_,ny_ = -dy/L, dx/L
+            bow = random.uniform(-0.15,0.15)
+            b['type'] = 'curve'; b['cp'] = {'fx':clamp01(mx+nx_*bow), 'fy':clamp01(my+ny_*bow)}
+        return b
+    if warm_braces:
+        braces = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {}))
+                  for b in (warm_braces[::2] if symmetric else warm_braces)]
+    else:
+        braces = [rand_brace() for _ in range(random.randint(1, max(1,half_cap)))]
+    n_modes = len(targets)
+    def evalb(bl):
+        r = evaluate_design(geo, expand(bl), n_modes, meas_xy)
+        return objective(r, targets, defl_limit_mm, mass_weight), r
+    cur_cost, cur_result = evalb(braces)
+    best_braces, best_cost, best_result = [dict(b) for b in braces], cur_cost, cur_result
+    for it in range(iters):
+        if CANCEL_FLAG['stop']:
+            break
+        T = temp_scale*(0.995**it)
+        cand = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {})) for b in braces]
+        move = random.random()
+        if move < 0.12 and len(cand) < half_cap:
+            cand.append(rand_brace())
+        elif move < 0.24 and len(cand) > 1:
+            cand.pop(random.randrange(len(cand)))
+        elif move < 0.55 and cand:
+            b = cand[random.randrange(len(cand))]
+            pt = b['pts'][random.randrange(2)]
+            pt['fx'] = clamp01(pt['fx'] + random.uniform(-0.08,0.08)*T*2+random.uniform(-0.02,0.02))
+            pt['fy'] = max(fy_lo, min(fy_hi, pt['fy'] + random.uniform(-0.08,0.08)*T*2+random.uniform(-0.02,0.02)))
+        elif move < 0.80 and cand:
+            # Resize cross-section -- center and tip dimensions mutate somewhat
+            # independently, so width and height can each end up tapered
+            # differently (or not at all).
+            b = cand[random.randrange(len(cand))]
+            b['height'] = max(3.0, min(24.0, b['height'] + random.uniform(-2.5,2.5)))
+            b['width'] = max(1.5, min(13.0, b['width'] + random.uniform(-1.5,1.5)))
+            hTip = b.get('heightTip') if b.get('heightTip') is not None else b['height']
+            wTip = b.get('widthTip') if b.get('widthTip') is not None else b['width']
+            b['heightTip'] = max(2.0, min(b['height'], hTip + random.uniform(-2.0,2.0)))
+            b['widthTip'] = max(1.0, min(b['width'], wTip + random.uniform(-1.5,1.5)))
+        elif cand:
+            # Bend or straighten this brace's centerline.
+            b = cand[random.randrange(len(cand))]
+            p0,p1 = b['pts'][0], b['pts'][1]
+            mx,my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
+            dx,dy = p1['fx']-p0['fx'], p1['fy']-p0['fy']; L = math.hypot(dx,dy) or 1e-6
+            nx_,ny_ = -dy/L, dx/L
+            cur_bow = 0.0
+            if b.get('cp'):
+                cur_bow = (b['cp']['fx']-mx)*nx_ + (b['cp']['fy']-my)*ny_
+            new_bow = max(-0.2, min(0.2, cur_bow + random.uniform(-0.06,0.06)))
+            if abs(new_bow) < 0.01:
+                b['type'] = 'straight'; b.pop('cp', None)
+            else:
+                b['type'] = 'curve'; b['cp'] = {'fx':clamp01(mx+nx_*new_bow), 'fy':clamp01(my+ny_*new_bow)}
+        cost, result = evalb(cand)
+        accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
+        if accept:
+            braces, cur_cost, cur_result = cand, cost, result
+        if cost < best_cost:
+            best_cost, best_braces, best_result = cost, [dict(b) for b in cand], result
+        if it % max(1,iters//25) == 0 or it==iters-1:
+            progress_cb(label, it, iters, best_cost, best_result)
+            await asyncio.sleep(0)
+    return expand(best_braces), best_cost, best_result
+
+
+# ── Main entry point called from JS ──────────────────────────────────────
+def _progress(label, it, iters, best_cost, best_result):
+    defl = best_result['deflBridgeMm'] if best_result and best_result.get('ok') else None
+    freqs = best_result['freqs'] if best_result and best_result.get('ok') else []
+    js.window.onOptimizerProgress(label, it, iters, float(best_cost),
+                                   json.dumps(freqs), (float(defl) if defl is not None else None))
+
+async def run_all_patterns(payload_json):
+    try:
+        CANCEL_FLAG['stop'] = False
+        p = json.loads(payload_json)
+        geo = p['geo']
+        targets = p['targets']  # [{freq,tol,weight,matchShape,measShape:[...] or None}]
+        meas_xy = None
+        if p.get('measX') and len(p['measX']):
+            meas_xy = (np.array(p['measX']), np.array(p['measY']))
+        defl_limit_mm = p['deflLimitMm']; mass_weight = p['massWeight']
+        iters = p['iters']; patterns = p['patterns']; fan_n = p.get('fanCount',5)
+        max_braces = p.get('maxBraces',6)
+        max_braces_exp = p.get('maxBracesExperimental', 20)
+        # The experimental pattern always searches asymmetrically with a
+        # much higher brace cap, so it has a substantially larger space to
+        # cover than "novel" for the same iteration count -- used both for
+        # its coarse search and its polish stage below, so it's not
+        # shortchanged in either.
+        exp_scale = min(3.0, max(1.5, (max_braces_exp / max(2, max_braces)) * 1.6))
+        symmetric = p.get('symmetric', True)
+        BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 10e9))
+        BRACE_MATERIAL['density'] = float(p.get('braceDensity', 420.0))
+
+        results = {}   # key -> (braces, coarse_cost)
+        if 'xbrace' in patterns and not CANCEL_FLAG['stop']:
+            _, cost, _, braces = await sa_continuous(xbrace_encode, XBRACE_BOUNDS, geo, targets, meas_xy,
+                                                    defl_limit_mm, mass_weight, iters, _progress, 'xbrace')
+            results['xbrace'] = (braces, cost)
+        if 'fan' in patterns and not CANCEL_FLAG['stop']:
+            enc = lambda pp: fan_encode(pp, fan_n)
+            _, cost, _, braces = await sa_continuous(enc, fan_bounds(fan_n), geo, targets, meas_xy,
+                                                    defl_limit_mm, mass_weight, iters, _progress, 'fan')
+            results['fan'] = (braces, cost)
+        if 'falcate' in patterns and not CANCEL_FLAG['stop']:
+            _, cost, _, braces = await sa_continuous(falcate_encode, FALCATE_BOUNDS, geo, targets, meas_xy,
+                                                    defl_limit_mm, mass_weight, iters, _progress, 'falcate')
+            results['falcate'] = (braces, cost)
+        if 'novel' in patterns and not CANCEL_FLAG['stop']:
+            braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
+                                                    max_braces, iters, _progress, 'novel', symmetric)
+            results['novel'] = (braces, cost)
+        if 'novelExperimental' in patterns and not CANCEL_FLAG['stop']:
+            # Same search, same mass penalty keeping it honest -- just with
+            # the symmetry requirement and the tight brace-count cap both
+            # removed, so it's free to go somewhere the constrained version
+            # structurally can't reach. That freedom comes at a real cost
+            # though: symmetry mode only ever searches HALF the plate and
+            # mirrors it, and the brace cap is much lower, so this pattern's
+            # search space is substantially larger for the same iteration
+            # count -- giving it the identical budget as "novel" understates
+            # it. exp_scale (above) compensates, and carries into its polish
+            # stage below too.
+            iters_exp = int(iters * exp_scale)
+            braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
+                                                    max_braces_exp, iters_exp, _progress, 'novelExperimental', symmetric=False)
+            results['novelExperimental'] = (braces, cost)
+
+        # ── Polish each coarse winner at full resolution ──
+        # The search grid above is deliberately coarse for speed, and a
+        # design that's near-optimal there isn't guaranteed to still be
+        # optimal on a finer mesh -- deflection in particular is sensitive
+        # to grid resolution right at the load point. Re-solving ONCE and
+        # just accepting whatever that reveals produces exactly the
+        # confusing "final jump" this replaces: instead, warm-start a
+        # short follow-up search AT hi-fi resolution from the coarse
+        # winner, so the result is actually re-optimized for the grid it's
+        # reported on rather than just re-measured on it.
+        final = {}
+        hifi_geo = dict(geo); hifi_geo['GN'] = p.get('hifiGN', 55)
+        n_modes = len(targets)
+        polish_iters = max(40, min(200, iters//4))
+        ENCODERS = {
+            'xbrace': (xbrace_encode, XBRACE_BOUNDS),
+            'fan': (lambda pp: fan_encode(pp, fan_n), fan_bounds(fan_n)),
+            'falcate': (falcate_encode, FALCATE_BOUNDS),
+        }
+        for key, (braces, coarse_cost) in results.items():
+            if CANCEL_FLAG['stop']:
+                r = evaluate_design(hifi_geo, braces, n_modes, meas_xy)
+                final[key] = {'braces': braces, 'result': r}
+                continue
+            if key == 'novel' or key == 'novelExperimental':
+                sym = symmetric if key == 'novel' else False
+                cap = max_braces if key == 'novel' else max_braces_exp
+                this_polish_iters = polish_iters if key == 'novel' else int(polish_iters * exp_scale)
+                polished_braces, polished_cost, r = await sa_free_topology(
+                    hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
+                    this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15)
+            else:
+                enc, bounds = ENCODERS[key]
+                # Re-derive a starting parameter vector isn't available (the
+                # coarse winner is already expanded to braces), so warm-start
+                # isn't meaningful for the fixed-topology patterns the same
+                # way -- their param count is small enough that a short fresh
+                # search at hi-fi resolution converges quickly anyway.
+                _, polished_cost, r, polished_braces = await sa_continuous(
+                    enc, bounds, hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight,
+                    polish_iters, _progress, key+'-polish', temp_scale=0.15)
+            final[key] = {'braces': polished_braces, 'result': r}
+            js.window.onOptimizerProgress(key, iters, iters, float(polished_cost),
+                                           json.dumps(r.get('freqs',[])),
+                                           float(r['deflBridgeMm']) if r.get('ok') else None)
+            await asyncio.sleep(0)
+
+        out = {}
+        for key, fr in final.items():
+            r = fr['result']
+            out[key] = {
+                'braces': fr['braces'],
+                'ok': r.get('ok', False),
+                'freqs': r.get('freqs', []),
+                'measShapes': r.get('measShapes'),
+                'deflBridgeMm': r.get('deflBridgeMm'),
+                'deflMaxMm': r.get('deflMaxMm'),
+                'massG': r.get('massG'),
+                'torqueResolved': r.get('torqueResolved', True),
+                'torqueRequested': r.get('torqueRequested', False),
+            }
+        js.window.onOptimizerDone(json.dumps(out), CANCEL_FLAG['stop'])
+    except Exception as exc:
+        import traceback
+        js.window.onOptimizerError(f'{type(exc).__name__}: {exc}\n{traceback.format_exc()}')
+
+async def compute_bare_modes(geo_json):
+    """Solve the plate with zero braces, so the person can see -- before
+    setting targets -- roughly what's actually reachable. Bracing only ADDS
+    mass and stiffness; stiffening dominates for realistic brace sizes, so
+    frequencies can be pushed UP fairly easily but pushing a mode BELOW its
+    bare-plate value takes an unrealistically soft/heavy brace, if it's
+    reachable at all. A target below the matching bare mode is a request
+    the physics can't really deliver, not something more search will fix."""
+    try:
+        geo = json.loads(geo_json)
+        r = evaluate_design(geo, [], 8)
+        js.window.onBareModesResult(json.dumps(r))
+    except Exception as exc:
+        import traceback
+        js.window.onBareModesError(f'{type(exc).__name__}: {exc}\n{traceback.format_exc()}')
+
+def request_cancel_optimizer():
+    CANCEL_FLAG['stop'] = True
+
+js.window.pyComputeBareModes = create_proxy(compute_bare_modes)
+js.window.pyRunAllPatterns = create_proxy(run_all_patterns)
+js.window.pyCancelOptimizer = create_proxy(request_cancel_optimizer)
+js.window.onPyEngineReady()
+
+</script>
+</body>
+</html>
