@@ -2731,42 +2731,46 @@ def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,
     return b
 
 def xbrace_encode(p):
-    """Fixed X-brace layout (upper transverse bar, small upper-bout support
-    braces above the soundhole, main X crossing below it, a bridge-area
-    reinforcement, two lower 'finger' braces, and a small tail-block
-    brace) -- matches a standard steel-string X-brace plan including the
-    small secondary braces that shape the response rather than just the
-    main structural members. Only cross-section dimensions are searched;
-    every position is fixed."""
-    h,w,th,tw,fh,fw,sh,sw,wTipFrac,hTipFrac = p
+    """Fixed X-brace layout, positions taken directly from a real reference
+    DXF sketch (mapped via the soundhole as a common scale/position anchor,
+    verified bilaterally symmetric to within ~1% before mirroring): an
+    upper transverse bar, the main X crossing just past the hole, a small
+    keystone reinforcement right at the crossing, and a pair of shorter
+    'wing' finger braces branching sideways from the crossing. Only
+    cross-section dimensions are searched; every position is fixed."""
+    h,w,th,tw,fh,fw,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
     return [
-        make_brace(0.17,0.22,0.17,0.78,th,tw),                     # upper transverse bar
-        make_brace(0.20,0.18,0.85,0.82,h,w,height_tip=hTip,width_tip=wTip),   # main X arm 1
-        make_brace(0.20,0.82,0.85,0.18,h,w,height_tip=hTip,width_tip=wTip),   # main X arm 2
-        make_brace(0.63,0.35,0.63,0.65,th,tw),                     # bridge-area reinforcement
-        make_brace(0.52,0.50,0.90,0.90,fh,fw),                     # lower finger brace 1
-        make_brace(0.52,0.50,0.90,0.10,fh,fw),                     # lower finger brace 2
-        make_brace(0.17,0.30,0.28,0.50,sh,sw),                     # small support brace above the hole, bass side
-        make_brace(0.17,0.70,0.28,0.50,sh,sw),                     # small support brace above the hole, treble side
-        make_brace(0.94,0.44,0.94,0.56,sh*0.8,sw*0.8),             # small tail-block brace
+        make_brace(0.29,0.26,0.29,0.74,th,tw),                     # upper transverse bar
+        make_brace(0.29,0.26,0.735,0.82,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
+        make_brace(0.29,0.74,0.735,0.18,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
+        make_brace(0.46,0.46,0.46,0.54,th*0.7,tw*0.7),             # small keystone reinforcement at the crossing
+        make_brace(0.485,0.50,0.44,0.25,fh,fw),                    # wing finger brace, bass side
+        make_brace(0.485,0.50,0.44,0.75,fh,fw),                    # wing finger brace, treble side
     ]
-XBRACE_BOUNDS = [(5,22),(2,12),(4,16),(2,10),(3,14),(2,9),(3,10),(2,7),(0.12,1.0),(0.12,1.0)]
+XBRACE_BOUNDS = [(5,22),(2,12),(4,16),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
 
 def fan_encode(p, n_braces):
-    """Fixed classical fan layout: two closing bars above the soundhole
-    (matching the reference plan's pair of crossbars near the neck block,
-    not just one), N rays fanning from a hub below the hole out to the
-    lower bout, a bridge-area patch, and a small tail brace -- matches a
-    standard 5-9 rayed fan-braced classical top. Only cross-section
-    dimensions are searched; ray geometry and hub position are fixed."""
+    """Fixed classical fan layout, positions taken directly from a real
+    reference DXF sketch (mapped via the soundhole as a common scale/
+    position anchor): a closing bar near the neck block, a curved
+    bridge-area patch arcing just above the hub, N rays fanning from the
+    hub out toward the lower bout, and a small tail brace. Only
+    cross-section dimensions are searched; ray geometry and hub position
+    are fixed."""
     h,w,barh,barw,th,tw,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
-    hubx, huby = 0.52, 0.5
-    fanspread, lenscale = 122.0, 0.37
+    hubx, huby = 0.46, 0.5
+    fanspread, lenscale = 97.0, 0.38
+    def curved(x1,y1,x2,y2,bow_amt,hh,ww):
+        mx,my = (x1+x2)/2, (y1+y2)/2
+        dx,dy = x2-x1, y2-y1
+        L = math.hypot(dx,dy) or 1e-6
+        nx_,ny_ = -dy/L, dx/L
+        return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt))
     braces = [
-        make_brace(0.12,0.16,0.12,0.84,barh,barw),  # upper closing bar, near the neck block
-        make_brace(0.20,0.24,0.20,0.76,th,tw),      # second, smaller closing bar -- tunes the upper-bout response
+        make_brace(0.30,0.25,0.30,0.75,barh,barw),        # closing bar, near the neck block
+        curved(0.44,0.29,0.44,0.71,-0.04,th,tw),           # curved bridge-area patch, just above the hub
     ]
     for i in range(n_braces):
         t = (i/(max(1,n_braces-1))) - 0.5 if n_braces>1 else 0.0
@@ -2775,23 +2779,20 @@ def fan_encode(p, n_braces):
         ex = hubx + math.sin(rad)*lenscale
         ey = huby + math.cos(rad)*lenscale
         braces.append(make_brace(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
-    braces.append(make_brace(0.62,0.32,0.62,0.68,th,tw))   # bridge-area patch
-    braces.append(make_brace(0.92,0.42,0.92,0.58,th,tw))   # small tail brace
+    braces.append(make_brace(0.83,0.47,0.83,0.53,th*0.7,tw*0.7))   # small tail brace
     return braces
 def fan_bounds(n_braces):
     return [(4,20),(2,12),(3,14),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
 
 def falcate_encode(p):
-    """Fixed Kasha/Smallman-style falcate layout, corrected against actual
-    builds: a 'wine-glass' V-strut around the soundhole that continues as
-    a short spine down into the bridge patch (the earlier version jumped
-    straight from the V to the patch with a gap), two mirror-symmetric
-    falcate (sickle) braces sweeping from the bridge area across the
-    lower bout with a much thinner tapered tip (approximating the
-    splayed/fanned ends real falcate braces are finished with), and a
-    small mirrored pair of finishing braces near the tail instead of one
-    off-axis nub. Only cross-section dimensions are searched; every
-    position/curve is fixed."""
+    """Fixed Kasha/Smallman-style falcate layout, positions taken directly
+    from a real reference DXF sketch (mapped via the soundhole as a common
+    scale/position anchor): a V-strut around the soundhole continuing as a
+    curved spine into the bridge patch, two mirror-symmetric falcate
+    (sickle) braces sweeping a much longer real span than earlier versions
+    assumed -- from just ahead of the hole almost to the tail -- and a
+    small mirrored pair of finishing braces near the tail. Only
+    cross-section dimensions are searched; every position/curve is fixed."""
     h,w,bow,vh,vw,th,tw,tailh,tailw,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
     def curved(x1,y1,x2,y2,bow_amt,hh,ww,htip=None,wtip=None):
@@ -2801,12 +2802,12 @@ def falcate_encode(p):
         nx_,ny_ = -dy/L, dx/L
         return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt),height_tip=htip,width_tip=wtip)
     return [
-        make_brace(0.07,0.30,0.30,0.50,vh,vw),          # V-strut, bass side
-        make_brace(0.07,0.70,0.30,0.50,vh,vw),          # V-strut, treble side
-        curved(0.28,0.50,0.58,0.50,0.28,vh*0.8,vw*0.8), # spine, V-point down into the bridge patch -- curved to clear the soundhole rather than crossing it
-        make_brace(0.61,0.34,0.61,0.66,th,tw),          # bridge-area patch
-        curved(0.57,0.42,0.92,0.14,-bow,h,w,hTip,wTip), # main falcate sweep, bass side
-        curved(0.57,0.58,0.92,0.86, bow,h,w,hTip,wTip), # main falcate sweep, treble side
+        make_brace(0.37,0.37,0.29,0.45,vh,vw),          # V-strut, bass side
+        make_brace(0.37,0.63,0.29,0.55,vh,vw),          # V-strut, treble side
+        curved(0.29,0.50,0.60,0.50,0.28,vh*0.8,vw*0.8), # spine, V-point down into the bridge patch -- curved to clear the soundhole rather than crossing it
+        make_brace(0.60,0.42,0.60,0.58,th,tw),          # bridge-area patch
+        curved(0.29,0.70,0.82,0.68,-bow,h,w,hTip,wTip), # main falcate sweep, treble side
+        curved(0.29,0.30,0.82,0.32, bow,h,w,hTip,wTip), # main falcate sweep, bass side
         make_brace(0.90,0.44,0.95,0.50,tailh,tailw),    # small tail brace, bass side
         make_brace(0.90,0.56,0.95,0.50,tailh,tailw),    # small tail brace, treble side
     ]
