@@ -1954,7 +1954,7 @@ function renderBraceDimsTable(braces){
     const hTip = b.heightTip==null ? b.height : b.heightTip;
     const wStr = Math.abs(wTip-b.width)<0.05 ? b.width.toFixed(1) : `${wTip.toFixed(1)}→${b.width.toFixed(1)}→${wTip.toFixed(1)}`;
     const hStr = Math.abs(hTip-b.height)<0.05 ? b.height.toFixed(1) : `${hTip.toFixed(1)}→${b.height.toFixed(1)}→${hTip.toFixed(1)}`;
-    return `<tr><td>${i+1}</td><td>${b.type==='curve'?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td></tr>`;
+    return `<tr><td>${i+1}</td><td>${(b.type==='curve'||b.type==='curve3')?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td></tr>`;
   }).join('');
   const mat = braces[0] ? `E=${(braces[0].modulus/1e9).toFixed(1)} GPa, ρ=${braces[0].density.toFixed(0)} kg/m³` : '';
   return `<div style="margin-top:10px">
@@ -1967,15 +1967,25 @@ function renderBraceDimsTable(braces){
 function braceFootprintPoints(b, LxMm, LyMm, NS){
   NS = NS||16;
   const p0=b.pts[0], p1=b.pts[1];
-  const isCurve = b.type==='curve' && b.cp;
-  const cx = LxMm*(isCurve?b.cp.fx:0), cy = LyMm*(isCurve?b.cp.fy:0);
+  const isQuad = b.type==='curve' && b.cp;
+  const isCubic = b.type==='curve3' && b.cp && b.cp2;
   const ax=p0.fx*LxMm, ay=p0.fy*LyMm, zx=p1.fx*LxMm, zy=p1.fy*LyMm;
+  const cx = LxMm*(isQuad?b.cp.fx:0), cy = LyMm*(isQuad?b.cp.fy:0);
+  const c1x = LxMm*(isCubic?b.cp.fx:0), c1y = LyMm*(isCubic?b.cp.fy:0);
+  const c2x = LxMm*(isCubic?b.cp2.fx:0), c2y = LyMm*(isCubic?b.cp2.fy:0);
   const pts=[];
   for(let i=0;i<=NS;i++){
     const t=i/NS;
     let x,y;
-    if(!isCurve){ x=ax+t*(zx-ax); y=ay+t*(zy-ay); }
-    else { x=(1-t)**2*ax+2*(1-t)*t*cx+t**2*zx; y=(1-t)**2*ay+2*(1-t)*t*cy+t**2*zy; }
+    if(isCubic){
+      const u=1-t;
+      x = u**3*ax + 3*u**2*t*c1x + 3*u*t**2*c2x + t**3*zx;
+      y = u**3*ay + 3*u**2*t*c1y + 3*u*t**2*c2y + t**3*zy;
+    } else if(isQuad){
+      x=(1-t)**2*ax+2*(1-t)*t*cx+t**2*zx; y=(1-t)**2*ay+2*(1-t)*t*cy+t**2*zy;
+    } else {
+      x=ax+t*(zx-ax); y=ay+t*(zy-ay);
+    }
     pts.push({x,y,t});
   }
   const wC=b.width, wT=(b.widthTip==null?b.width:b.widthTip);
@@ -2086,7 +2096,7 @@ function buildVisualizerFormatProject(key){
     braces: (res.braces||[]).map(b => ({
       type: b.type, color: '#c8903a',
       width: b.width, height: b.height, density: b.density, modulus: b.modulus,
-      pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null,
+      pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null,
     })),
   };
 }
@@ -2181,7 +2191,7 @@ function applyVisualizerFormatProject(proj){
     Lx: as.Lx, Ly: as.Ly, h: as.h, E: as.topE, rho: as.topRho, nu: as.topNu, bcMode: as.bcMode,
   });
   if(proj.braces && proj.braces.length){
-    const swappedBraces = proj.braces.map(b => ({ ...b, pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null }));
+    const swappedBraces = proj.braces.map(b => ({ ...b, pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null }));
     GEN.results['loaded'] = { ok:true, braces: swappedBraces, freqs: (proj.hifi&&proj.hifi.freqs)||[] };
   }
   document.getElementById('geoLx').value = Math.round(GEO.Lx*1000);
@@ -2357,23 +2367,36 @@ def _sample_brace(b, Lx, Ly, NS=10):
     a, z = b['pts'][0], b['pts'][1]
     ax, ay = a['fx'] * Lx, a['fy'] * Ly
     zx, zy = z['fx'] * Lx, z['fy'] * Ly
-    is_curve = (b.get('type') == 'curve') and b.get('cp') is not None
-    if is_curve:
+    btype = b.get('type')
+    is_quad = (btype == 'curve') and b.get('cp') is not None
+    is_cubic = (btype == 'curve3') and b.get('cp') is not None and b.get('cp2') is not None
+    if is_quad:
         cpx, cpy = b['cp']['fx'] * Lx, b['cp']['fy'] * Ly
+    if is_cubic:
+        c1x, c1y = b['cp']['fx'] * Lx, b['cp']['fy'] * Ly
+        c2x, c2y = b['cp2']['fx'] * Lx, b['cp2']['fy'] * Ly
+    def eval_pt(t):
+        if is_cubic:
+            u = 1-t
+            x = u**3*ax + 3*u**2*t*c1x + 3*u*t**2*c2x + t**3*zx
+            y = u**3*ay + 3*u**2*t*c1y + 3*u*t**2*c2y + t**3*zy
+        elif is_quad:
+            x = (1-t)**2*ax + 2*(1-t)*t*cpx + t**2*zx
+            y = (1-t)**2*ay + 2*(1-t)*t*cpy + t**2*zy
+        else:
+            x = ax + t*(zx-ax); y = ay + t*(zy-ay)
+        return x, y
     pts = []
     for i in range(NS + 1):
         t = i / NS
-        if not is_curve:
-            x = ax + t * (zx - ax); y = ay + t * (zy - ay)
-            sl = math.hypot(zx - ax, zy - ay) / NS
-        else:
-            x = (1 - t) ** 2 * ax + 2 * (1 - t) * t * cpx + t ** 2 * zx
-            y = (1 - t) ** 2 * ay + 2 * (1 - t) * t * cpy + t ** 2 * zy
+        x, y = eval_pt(t)
+        if is_quad or is_cubic:
             dt = 1.0 / NS
             t0, t1 = max(0.0, t - dt / 2), min(1.0, t + dt / 2)
-            x0 = (1-t0)**2*ax + 2*(1-t0)*t0*cpx + t0**2*zx; y0 = (1-t0)**2*ay + 2*(1-t0)*t0*cpy + t0**2*zy
-            x1 = (1-t1)**2*ax + 2*(1-t1)*t1*cpx + t1**2*zx; y1 = (1-t1)**2*ay + 2*(1-t1)*t1*cpy + t1**2*zy
+            x0, y0 = eval_pt(t0); x1, y1 = eval_pt(t1)
             sl = math.hypot(x1 - x0, y1 - y0)
+        else:
+            sl = math.hypot(zx - ax, zy - ay) / NS
         pts.append((x, y, sl, t))
     return pts
 
@@ -2719,49 +2742,70 @@ BRACE_MATERIAL = {'modulus': 10e9, 'density': 420.0}
 # wait out however many iterations are left.
 CANCEL_FLAG = {'stop': False}
 
-def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,height_tip=None,width_tip=None):
+def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,curve_cp2=None,height_tip=None,width_tip=None):
     modulus = BRACE_MATERIAL['modulus'] if modulus is None else modulus
     density = BRACE_MATERIAL['density'] if density is None else density
-    b = {'type':'curve' if curve_cp else 'straight',
+    # 'curve3' (cubic, two control points) can represent a true S-curve/
+    # inflection -- a single quadratic control point can only bow ONE way,
+    # so it's structurally incapable of the sweep-in-then-back-out shape
+    # falcate bracing actually has. 'curve' (quadratic) still covers the
+    # simple one-direction bows used elsewhere (X-brace keystone, fan
+    # bridge patch, falcate's own spine).
+    btype = 'curve3' if curve_cp2 else ('curve' if curve_cp else 'straight')
+    b = {'type':btype,
          'pts':[{'fx':clamp01(x1),'fy':clamp01(y1)},{'fx':clamp01(x2),'fy':clamp01(y2)}],
          'width':max(1.5,width), 'height':max(3.0,height), 'modulus':modulus, 'density':density,
          'widthTip': (max(1.0,width_tip) if width_tip is not None else None),
          'heightTip': (max(2.0,height_tip) if height_tip is not None else None)}
     if curve_cp: b['cp'] = {'fx':clamp01(curve_cp[0]), 'fy':clamp01(curve_cp[1])}
+    if curve_cp2: b['cp2'] = {'fx':clamp01(curve_cp2[0]), 'fy':clamp01(curve_cp2[1])}
     return b
 
 def xbrace_encode(p):
-    """Fixed X-brace layout, positions taken directly from a real reference
-    DXF sketch (mapped via the soundhole as a common scale/position anchor,
-    verified bilaterally symmetric to within ~1% before mirroring): an
-    upper transverse bar, the main X crossing just past the hole, a small
-    keystone reinforcement right at the crossing, and a pair of shorter
-    'wing' finger braces branching sideways from the crossing. Only
-    cross-section dimensions are searched; every position is fixed."""
-    h,w,th,tw,fh,fw,wTipFrac,hTipFrac = p
+    """Fixed X-brace layout taken directly from a real project file the
+    user built and exported (not reverse-engineered from a DXF sketch) --
+    every position below is the actual data, converted from the paired
+    Visualizer's own coordinate convention and re-anchored so the
+    soundhole lands exactly where this tool's dreadnought preset expects
+    it. This design is NOT bilaterally symmetric -- confirmed again here,
+    independently of the earlier DXF-based version: two extra diagonal
+    braces run from the treble-upper area to the bass-lower corner with
+    no mirrored counterpart, matching what the DXF reference also showed.
+    A transverse bar, the main X crossing, a bridge-area patch, and three
+    pairs of wing/finger braces at different positions and angles fanning
+    from the crossing area toward the lower bout. Only cross-section
+    dimensions are searched; every position is fixed."""
+    h,w,th,tw,fh,fw,f2h,f2w,f3h,f3w,eh,ew,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
     return [
-        make_brace(0.29,0.26,0.29,0.74,th,tw),                     # upper transverse bar
-        make_brace(0.29,0.26,0.735,0.82,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
-        make_brace(0.29,0.74,0.735,0.18,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
-        make_brace(0.46,0.46,0.46,0.54,th*0.7,tw*0.7),             # small keystone reinforcement at the crossing
-        make_brace(0.485,0.50,0.44,0.25,fh,fw),                    # wing finger brace, bass side
-        make_brace(0.485,0.50,0.44,0.75,fh,fw),                    # wing finger brace, treble side
+        make_brace(0.30,0.80,0.30,0.20,th,tw),                      # transverse bar (nudged nearer the hole -- positioned relative to the source trace's much larger hole radius, corrected for this tool's standard dreadnought hole size)
+        make_brace(0.76,0.09,0.32,0.79,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
+        make_brace(0.76,0.91,0.32,0.21,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
+        make_brace(0.46,0.568,0.46,0.436,th,tw),                    # bridge-area patch (same correction)
+        make_brace(0.407,0.676,0.271,0.602,fh,fw),                  # wing brace A, treble side (nearest the hole)
+        make_brace(0.409,0.322,0.267,0.399,fh,fw),                  # wing brace A, bass side
+        make_brace(0.460,0.846,0.600,0.632,f2h,f2w),                # wing brace B, treble side
+        make_brace(0.603,0.381,0.462,0.158,f2h,f2w),                # wing brace B, bass side
+        make_brace(0.562,0.906,0.671,0.733,f3h,f3w),                # wing brace C, treble side
+        make_brace(0.677,0.272,0.569,0.100,f3h,f3w),                # wing brace C, bass side
+        make_brace(0.691,0.769,0.86,0.10,eh,ew),                    # extra diagonal 1 -- NOT mirrored (real, deliberate asymmetry)
+        make_brace(0.742,0.853,0.91,0.16,eh,ew),                    # extra diagonal 2 -- same direction, NOT mirrored
     ]
-XBRACE_BOUNDS = [(5,22),(2,12),(4,16),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
+XBRACE_BOUNDS = [(6,20),(2,12),(6,20),(3,14),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
 def fan_encode(p, n_braces):
-    """Fixed classical fan layout, positions taken directly from a real
-    reference DXF sketch (mapped via the soundhole as a common scale/
-    position anchor): a closing bar near the neck block, a curved
-    bridge-area patch arcing just above the hub, N rays fanning from the
-    hub out toward the lower bout, and a small tail brace. Only
-    cross-section dimensions are searched; ray geometry and hub position
-    are fixed."""
+    """Fixed classical fan layout, positions re-verified against a
+    reference DXF that includes the actual body outline -- cross-checked
+    between dreadnought and OM versions of the same plan for consistency.
+    A wide closing bar near the neck block, a wide curved bridge-area
+    patch arcing just above the hub, N rays fanning from the hub out
+    toward the lower bout (one ray reaching almost straight down to the
+    tail block), and a small tail brace. Only cross-section dimensions
+    are searched; ray geometry and hub position are fixed."""
     h,w,barh,barw,th,tw,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
-    hubx, huby = 0.46, 0.5
-    fanspread, lenscale = 97.0, 0.38
+    hubx, huby = 0.47, 0.5
+    fanspread, lenscale = 108.0, 0.42
     def curved(x1,y1,x2,y2,bow_amt,hh,ww):
         mx,my = (x1+x2)/2, (y1+y2)/2
         dx,dy = x2-x1, y2-y1
@@ -2769,8 +2813,8 @@ def fan_encode(p, n_braces):
         nx_,ny_ = -dy/L, dx/L
         return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt))
     braces = [
-        make_brace(0.30,0.25,0.30,0.75,barh,barw),        # closing bar, near the neck block
-        curved(0.44,0.29,0.44,0.71,-0.04,th,tw),           # curved bridge-area patch, just above the hub
+        make_brace(0.19,0.18,0.19,0.82,barh,barw),        # closing bar, near the neck block
+        curved(0.47,0.22,0.47,0.78,-0.05,th,tw),           # curved bridge-area patch, just above the hub
     ]
     for i in range(n_braces):
         t = (i/(max(1,n_braces-1))) - 0.5 if n_braces>1 else 0.0
@@ -2779,39 +2823,48 @@ def fan_encode(p, n_braces):
         ex = hubx + math.sin(rad)*lenscale
         ey = huby + math.cos(rad)*lenscale
         braces.append(make_brace(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
-    braces.append(make_brace(0.83,0.47,0.83,0.53,th*0.7,tw*0.7))   # small tail brace
+    braces.append(make_brace(0.90,0.47,0.90,0.53,th*0.7,tw*0.7))   # small tail brace
     return braces
 def fan_bounds(n_braces):
     return [(4,20),(2,12),(3,14),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
 
 def falcate_encode(p):
-    """Fixed Kasha/Smallman-style falcate layout, positions taken directly
-    from a real reference DXF sketch (mapped via the soundhole as a common
-    scale/position anchor): a V-strut around the soundhole continuing as a
-    curved spine into the bridge patch, two mirror-symmetric falcate
-    (sickle) braces sweeping a much longer real span than earlier versions
-    assumed -- from just ahead of the hole almost to the tail -- and a
-    small mirrored pair of finishing braces near the tail. Only
-    cross-section dimensions are searched; every position/curve is fixed."""
-    h,w,bow,vh,vw,th,tw,tailh,tailw,wTipFrac,hTipFrac = p
-    wTip, hTip = w*wTipFrac, h*hTipFrac
-    def curved(x1,y1,x2,y2,bow_amt,hh,ww,htip=None,wtip=None):
-        mx,my = (x1+x2)/2, (y1+y2)/2
-        dx,dy = x2-x1, y2-y1
-        L = math.hypot(dx,dy) or 1e-6
-        nx_,ny_ = -dy/L, dx/L
-        return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt),height_tip=htip,width_tip=wtip)
+    """Fixed falcate layout taken directly from a real project file the
+    user built and exported (not reverse-engineered from a DXF sketch) --
+    every position and curve control point below is the actual data,
+    converted from the paired Visualizer's own coordinate convention
+    (confirmed opposite of this tool's: there, fx=width/fy=length) and
+    re-anchored so the soundhole lands exactly where this tool's
+    dreadnought preset expects it. A main sweep pair (long, single-bow
+    quadratic curves), a shorter secondary sweep pair nested alongside
+    them, a V-strut-like pair nearer the hole, a mid-body connector pair,
+    a central bridge-area patch, and a small tail brace that has no
+    mirror partner in the source file (an intentional asymmetry, kept
+    rather than forced into a mirror). Only cross-section dimensions are
+    searched; every position/curve is fixed."""
+    h1,w1,h2,w2,h3,w3,h4,w4,h5,w5,h6,w6,wTipFrac,hTipFrac = p
+    w1Tip,h1Tip = w1*wTipFrac, h1*hTipFrac
+    w2Tip,h2Tip = w2*wTipFrac, h2*hTipFrac
     return [
-        make_brace(0.37,0.37,0.29,0.45,vh,vw),          # V-strut, bass side
-        make_brace(0.37,0.63,0.29,0.55,vh,vw),          # V-strut, treble side
-        curved(0.29,0.50,0.60,0.50,0.28,vh*0.8,vw*0.8), # spine, V-point down into the bridge patch -- curved to clear the soundhole rather than crossing it
-        make_brace(0.60,0.42,0.60,0.58,th,tw),          # bridge-area patch
-        curved(0.29,0.70,0.82,0.68,-bow,h,w,hTip,wTip), # main falcate sweep, treble side
-        curved(0.29,0.30,0.82,0.32, bow,h,w,hTip,wTip), # main falcate sweep, bass side
-        make_brace(0.90,0.44,0.95,0.50,tailh,tailw),    # small tail brace, bass side
-        make_brace(0.90,0.56,0.95,0.50,tailh,tailw),    # small tail brace, treble side
+        # Main sweep pair -- long, single-bow curves (quadratic, matching
+        # the source file's own curve data exactly).
+        make_brace(0.94,0.281,0.258,0.243,h1,w1,curve_cp=(0.795,0.647),height_tip=h1Tip,width_tip=w1Tip),
+        make_brace(0.94,0.721,0.260,0.758,h1,w1,curve_cp=(0.767,0.340),height_tip=h1Tip,width_tip=w1Tip),
+        # Secondary sweep pair -- shorter, nested alongside the main one.
+        make_brace(0.855,0.138,0.541,0.207,h2,w2,curve_cp=(0.693,0.561),height_tip=h2Tip,width_tip=w2Tip),
+        make_brace(0.866,0.859,0.544,0.762,h2,w2,curve_cp=(0.700,0.448),height_tip=h2Tip,width_tip=w2Tip),
+        # V-strut-like pair, nearer the soundhole.
+        make_brace(0.365,0.329,0.252,0.426,h3,w3),
+        make_brace(0.260,0.579,0.373,0.673,h3,w3),
+        # Mid-body connector pair.
+        make_brace(0.685,0.108,0.689,0.324,h4,w4),
+        make_brace(0.686,0.665,0.690,0.885,h4,w4),
+        # Central bridge-area patch.
+        make_brace(0.501,0.397,0.503,0.590,h5,w5),
+        # Small tail brace -- no mirror in the source file; kept asymmetric.
+        make_brace(0.957,0.421,0.888,0.533,h6,w6),
     ]
-FALCATE_BOUNDS = [(5,20),(2,12),(0.05,0.25),(3,12),(2,8),(3,14),(2,9),(2,9),(2,8),(0.1,1.0),(0.1,1.0)]
+FALCATE_BOUNDS = [(6,20),(2,10),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
 
 # ── Simulated annealing over a continuous parameter vector ──────────────
@@ -2979,24 +3032,24 @@ async def run_all_patterns(payload_json):
         BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 10e9))
         BRACE_MATERIAL['density'] = float(p.get('braceDensity', 420.0))
 
-        results = {}   # key -> (braces, coarse_cost)
+        results = {}   # key -> (braces, coarse_cost, coarse_x)
         if 'xbrace' in patterns and not CANCEL_FLAG['stop']:
-            _, cost, _, braces = await sa_continuous(xbrace_encode, XBRACE_BOUNDS, geo, targets, meas_xy,
+            coarse_x, cost, _, braces = await sa_continuous(xbrace_encode, XBRACE_BOUNDS, geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'xbrace')
-            results['xbrace'] = (braces, cost)
+            results['xbrace'] = (braces, cost, coarse_x)
         if 'fan' in patterns and not CANCEL_FLAG['stop']:
             enc = lambda pp: fan_encode(pp, fan_n)
-            _, cost, _, braces = await sa_continuous(enc, fan_bounds(fan_n), geo, targets, meas_xy,
+            coarse_x, cost, _, braces = await sa_continuous(enc, fan_bounds(fan_n), geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'fan')
-            results['fan'] = (braces, cost)
+            results['fan'] = (braces, cost, coarse_x)
         if 'falcate' in patterns and not CANCEL_FLAG['stop']:
-            _, cost, _, braces = await sa_continuous(falcate_encode, FALCATE_BOUNDS, geo, targets, meas_xy,
+            coarse_x, cost, _, braces = await sa_continuous(falcate_encode, FALCATE_BOUNDS, geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'falcate')
-            results['falcate'] = (braces, cost)
+            results['falcate'] = (braces, cost, coarse_x)
         if 'novel' in patterns and not CANCEL_FLAG['stop']:
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
                                                     max_braces, iters, _progress, 'novel', symmetric)
-            results['novel'] = (braces, cost)
+            results['novel'] = (braces, cost, None)
         if 'novelExperimental' in patterns and not CANCEL_FLAG['stop']:
             # Same search, same mass penalty keeping it honest -- just with
             # the symmetry requirement and the tight brace-count cap both
@@ -3011,7 +3064,7 @@ async def run_all_patterns(payload_json):
             iters_exp = int(iters * exp_scale)
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
                                                     max_braces_exp, iters_exp, _progress, 'novelExperimental', symmetric=False)
-            results['novelExperimental'] = (braces, cost)
+            results['novelExperimental'] = (braces, cost, None)
 
         # ── Polish each coarse winner at full resolution ──
         # The search grid above is deliberately coarse for speed, and a
@@ -3033,7 +3086,7 @@ async def run_all_patterns(payload_json):
             'fan': (lambda pp: fan_encode(pp, fan_n), fan_bounds(fan_n)),
             'falcate': (falcate_encode, FALCATE_BOUNDS),
         }
-        for key, (braces, coarse_cost) in results.items():
+        for key, (braces, coarse_cost, coarse_x) in results.items():
             if CANCEL_FLAG['stop']:
                 r = evaluate_design(hifi_geo, braces, n_modes, meas_xy)
                 final[key] = {'braces': braces, 'result': r}
@@ -3047,14 +3100,18 @@ async def run_all_patterns(payload_json):
                     this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15)
             else:
                 enc, bounds = ENCODERS[key]
-                # Re-derive a starting parameter vector isn't available (the
-                # coarse winner is already expanded to braces), so warm-start
-                # isn't meaningful for the fixed-topology patterns the same
-                # way -- their param count is small enough that a short fresh
-                # search at hi-fi resolution converges quickly anyway.
+                # Warm-start the polish search from the coarse winner's own
+                # parameter vector -- previously this was discarded (the
+                # coarse call site kept only the resulting braces, not the
+                # parameters that produced them), so the polish stage was
+                # silently starting over from a random point at hi-fi
+                # resolution rather than refining the coarse result. That's
+                # exactly what produced a cost spike at the start of polish:
+                # not the design being "reset" by design, but a real bug
+                # throwing away a perfectly good starting point.
                 _, polished_cost, r, polished_braces = await sa_continuous(
                     enc, bounds, hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight,
-                    polish_iters, _progress, key+'-polish', temp_scale=0.15)
+                    polish_iters, _progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
             # One more solve at a MUCH higher resolution, purely for the
             # numbers actually displayed -- a finite-difference plate model
             # like this converges from above (coarse grids overestimate
