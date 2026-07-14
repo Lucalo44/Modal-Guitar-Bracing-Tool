@@ -328,6 +328,32 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="sbar-title">Novel — experimental settings</div>
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelExpMaxBraces" value="20" min="2" max="40"></div>
     </div>
+    <div class="sbar-section" id="multiMaterialSettings" style="display:none">
+      <div class="sbar-title">Materials available to this solver</div>
+      <div class="sbar-hint">Mixed-material search (assigning different braces different materials within the same run) isn't implemented yet — every brace still uses the single "Brace material" set below. This is a preview of the materials palette it will draw from once that's in place; edit the properties here if your actual stock differs.</div>
+      <table style="width:100%; margin-top:10px; border-collapse:collapse; font-size:11px; color:var(--text)">
+        <thead>
+          <tr style="color:var(--dim); font-size:9.5px; text-transform:uppercase; letter-spacing:.08em">
+            <th style="text-align:left; font-weight:600; padding-bottom:6px">Material</th>
+            <th style="text-align:right; font-weight:600; padding-bottom:6px">E (GPa)</th>
+            <th style="text-align:right; font-weight:600; padding-bottom:6px">ρ (kg/m³)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:4px 0">Spruce</td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceE" value="10" step="0.5" style="width:58px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceRho" value="420" step="10" style="width:64px; text-align:right"></td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0">Carbon fiber</td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matCarbonE" value="135" step="5" style="width:58px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matCarbonRho" value="1600" step="50" style="width:64px; text-align:right"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="sbar-hint">Carbon fiber's default values are for a unidirectional structural composite (rod or lamina) along the fiber direction — not the "carbon-fiber reinforced" hybrid preset below, which represents a wood/CF blend at a much lower effective stiffness.</div>
+    </div>
     <div class="sbar-section">
       <div class="sbar-title">Fan settings</div>
       <div class="param-row inline"><label>Fan brace count</label><input type="number" id="fanCount" value="5" min="3" max="9"></div>
@@ -406,7 +432,7 @@ const DS = { dirHandle:null, dirName:'', runs:[], selectedRun:null, nodes:[], fr
 const MS = { compositeFreq:null, compositeMagDb:null, modes:[] };
 // modes: [{id,use,label,freq,tol,weight,matchShape,nodeAmp:{label:val}}]
 const GEO = {
-  outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.0814, bridge:{fx:0.63, fy:0.5},
+  outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.1332, bridge:{fx:0.63, fy:0.5},
   bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:12,
   Lx:0.508, Ly:0.394, h:0.0028, E:11e9, rho:420, nu:0.30, bcMode:'ss',
   loadN:300, bridgeTorqueNmm:10000, deflLimitMm:2, traceMode:'outline', bgImage:null
@@ -1251,9 +1277,9 @@ const DXF_OUTLINES = {
 };
 const OUTLINE_PRESETS = {
   dreadnought: { bodyLen:508, upperBout:292, waist:279, lowerBout:394, waistPos:0.62,
-                 holeCx:0.382, holeCy:0.5, holeR:0.0814 },
+                 holeCx:0.382, holeCy:0.5, holeR:0.1332 },
   om:          { bodyLen:487, upperBout:270, waist:250, lowerBout:375, waistPos:0.60,
-                 holeCx:0.387, holeCy:0.5, holeR:0.0820 },
+                 holeCx:0.387, holeCy:0.5, holeR:0.140 },
   'violin4-4': { bodyLen:356, upperBout:166, waist:110, lowerBout:203, waistPos:0.58,
                  holeCx:0.5, holeCy:0.5, holeR:0.001 },
 };
@@ -1787,6 +1813,7 @@ function buildGeoPayload(GN){
 
 document.getElementById('genNovelExperimental').onchange = e=>{
   document.getElementById('novelExperimentalSettings').style.display = e.target.checked ? 'block' : 'none';
+  document.getElementById('multiMaterialSettings').style.display = e.target.checked ? 'block' : 'none';
 };
 const BRACE_MAT_PRESETS = { spruce:{E:10,rho:420}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
 document.getElementById('braceMatPreset').onchange = e=>{
@@ -1834,6 +1861,10 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
     displayGN: +document.getElementById('finalDisplayGN').value,
     braceModulus: +document.getElementById('braceE').value*1e9,
     braceDensity: +document.getElementById('braceRho').value,
+    expMatSpruceE: +document.getElementById('matSpruceE').value*1e9,
+    expMatSpruceRho: +document.getElementById('matSpruceRho').value,
+    expMatCarbonE: +document.getElementById('matCarbonE').value*1e9,
+    expMatCarbonRho: +document.getElementById('matCarbonRho').value,
   };
   document.getElementById('genLog').textContent = '';
   document.getElementById('genProgressFill').style.width='0%';
@@ -1948,18 +1979,27 @@ function braceLengthMm(b, LxMm, LyMm){
 
 function renderBraceDimsTable(braces){
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  const matLabel = (b)=>{
+    const eGPa = b.modulus/1e9;
+    if (eGPa > 60) return 'Carbon fiber';
+    if (eGPa > 0) return 'Spruce';
+    return '';
+  };
+  const allSame = braces.every(b => Math.abs(b.modulus-braces[0].modulus)<1e3 && Math.abs(b.density-braces[0].density)<0.1);
   const rows = braces.map((b,i)=>{
     const len = braceLengthMm(b, LxMm, LyMm);
     const wTip = b.widthTip==null ? b.width : b.widthTip;
     const hTip = b.heightTip==null ? b.height : b.heightTip;
     const wStr = Math.abs(wTip-b.width)<0.05 ? b.width.toFixed(1) : `${wTip.toFixed(1)}→${b.width.toFixed(1)}→${wTip.toFixed(1)}`;
     const hStr = Math.abs(hTip-b.height)<0.05 ? b.height.toFixed(1) : `${hTip.toFixed(1)}→${b.height.toFixed(1)}→${hTip.toFixed(1)}`;
-    return `<tr><td>${i+1}</td><td>${(b.type==='curve'||b.type==='curve3')?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td></tr>`;
+    const matCell = allSame ? '' : `<td>${matLabel(b)}</td>`;
+    return `<tr><td>${i+1}</td><td>${(b.type==='curve'||b.type==='curve3')?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td>${matCell}</tr>`;
   }).join('');
-  const mat = braces[0] ? `E=${(braces[0].modulus/1e9).toFixed(1)} GPa, ρ=${braces[0].density.toFixed(0)} kg/m³` : '';
+  const mat = allSame && braces[0] ? `E=${(braces[0].modulus/1e9).toFixed(1)} GPa, ρ=${braces[0].density.toFixed(0)} kg/m³` : 'Mixed materials (see table)';
+  const matHeader = allSame ? '' : '<th>Material</th>';
   return `<div style="margin-top:10px">
     <div class="metric-row" style="border-bottom:none"><span style="font-weight:600;color:var(--text)">Brace dimensions</span><span class="v" style="color:var(--dim)">${mat}</span></div>
-    <table class="data-table" style="margin-top:4px"><thead><tr><th>#</th><th>Shape</th><th>Length (mm)</th><th>Width tip→ctr→tip (mm)</th><th>Height tip→ctr→tip (mm)</th></tr></thead>
+    <table class="data-table" style="margin-top:4px"><thead><tr><th>#</th><th>Shape</th><th>Length (mm)</th><th>Width tip→ctr→tip (mm)</th><th>Height tip→ctr→tip (mm)</th>${matHeader}</tr></thead>
     <tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -2761,7 +2801,32 @@ def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,
     if curve_cp2: b['cp2'] = {'fx':clamp01(curve_cp2[0]), 'fy':clamp01(curve_cp2[1])}
     return b
 
-def xbrace_encode(p):
+# All three fixed-topology templates below (X-brace, fan, falcate) were
+# authored and verified against one specific reference soundhole position
+# and size -- every (fx,fy) in them is really only correct FOR that hole.
+# Changing the hole (a different preset, a custom trace, a resized hole)
+# previously left the braces exactly where they were, since the encoders
+# never received the hole at all -- only the search parameters. That's
+# backwards: the soundhole is the actual anchor real bracing plans are
+# built around, so the templates need to move and rescale WITH it, not
+# assume it never changes.
+#
+# Fix: every encoder now takes the real geo dict and builds a small
+# closure, hr(fx,fy), that maps a coordinate from the reference hole's
+# frame onto wherever the CURRENT hole actually is -- translating by the
+# hole-center offset and scaling by the hole-radius ratio. Every position
+# in each template is passed through hr() before being used, so the whole
+# pattern re-anchors itself to the real hole automatically.
+_REF_HOLE_CX, _REF_HOLE_CY, _REF_HOLE_R = 0.382, 0.5, 0.1332
+def hole_relative_fn(geo):
+    holeCx = geo.get('holeCx', _REF_HOLE_CX); holeCy = geo.get('holeCy', _REF_HOLE_CY)
+    holeR = geo.get('holeR', _REF_HOLE_R)
+    scale = (holeR / _REF_HOLE_R) if _REF_HOLE_R > 1e-9 else 1.0
+    def hr(fx, fy):
+        return (holeCx + (fx - _REF_HOLE_CX) * scale, holeCy + (fy - _REF_HOLE_CY) * scale)
+    return hr
+
+def xbrace_encode(p, geo=None):
     """Fixed X-brace layout taken directly from a real project file the
     user built and exported (not reverse-engineered from a DXF sketch) --
     every position below is the actual data, converted from the paired
@@ -2777,23 +2842,27 @@ def xbrace_encode(p):
     dimensions are searched; every position is fixed."""
     h,w,th,tw,fh,fw,f2h,f2w,f3h,f3w,eh,ew,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
+    hr = hole_relative_fn(geo or {})
+    def hb(x1,y1,x2,y2,height,width,**kw):
+        x1,y1 = hr(x1,y1); x2,y2 = hr(x2,y2)
+        return make_brace(x1,y1,x2,y2,height,width,**kw)
     return [
-        make_brace(0.30,0.80,0.30,0.20,th,tw),                      # transverse bar (nudged nearer the hole -- positioned relative to the source trace's much larger hole radius, corrected for this tool's standard dreadnought hole size)
-        make_brace(0.76,0.09,0.32,0.79,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
-        make_brace(0.76,0.91,0.32,0.21,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
-        make_brace(0.46,0.568,0.46,0.436,th,tw),                    # bridge-area patch (same correction)
-        make_brace(0.407,0.676,0.271,0.602,fh,fw),                  # wing brace A, treble side (nearest the hole)
-        make_brace(0.409,0.322,0.267,0.399,fh,fw),                  # wing brace A, bass side
-        make_brace(0.460,0.846,0.600,0.632,f2h,f2w),                # wing brace B, treble side
-        make_brace(0.603,0.381,0.462,0.158,f2h,f2w),                # wing brace B, bass side
-        make_brace(0.562,0.906,0.671,0.733,f3h,f3w),                # wing brace C, treble side
-        make_brace(0.677,0.272,0.569,0.100,f3h,f3w),                # wing brace C, bass side
-        make_brace(0.691,0.769,0.86,0.10,eh,ew),                    # extra diagonal 1 -- NOT mirrored (real, deliberate asymmetry)
-        make_brace(0.742,0.853,0.91,0.16,eh,ew),                    # extra diagonal 2 -- same direction, NOT mirrored
+        hb(0.24,0.80,0.24,0.20,th,tw),                      # transverse bar
+        hb(0.76,0.09,0.32,0.79,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
+        hb(0.76,0.91,0.32,0.21,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
+        hb(0.53,0.568,0.53,0.436,th,tw),                    # bridge-area patch
+        hb(0.407,0.676,0.271,0.602,fh,fw),                  # wing brace A, treble side (nearest the hole)
+        hb(0.409,0.322,0.267,0.399,fh,fw),                  # wing brace A, bass side
+        hb(0.460,0.846,0.600,0.632,f2h,f2w),                # wing brace B, treble side
+        hb(0.603,0.381,0.462,0.158,f2h,f2w),                # wing brace B, bass side
+        hb(0.562,0.906,0.671,0.733,f3h,f3w),                # wing brace C, treble side
+        hb(0.677,0.272,0.569,0.100,f3h,f3w),                # wing brace C, bass side
+        hb(0.691,0.769,0.86,0.10,eh,ew),                    # extra diagonal 1 -- NOT mirrored (real, deliberate asymmetry)
+        hb(0.742,0.853,0.91,0.16,eh,ew),                    # extra diagonal 2 -- same direction, NOT mirrored
     ]
 XBRACE_BOUNDS = [(6,20),(2,12),(6,20),(3,14),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
-def fan_encode(p, n_braces):
+def fan_encode(p, n_braces, geo=None):
     """Fixed classical fan layout, positions re-verified against a
     reference DXF that includes the actual body outline -- cross-checked
     between dreadnought and OM versions of the same plan for consistency.
@@ -2804,31 +2873,36 @@ def fan_encode(p, n_braces):
     are searched; ray geometry and hub position are fixed."""
     h,w,barh,barw,th,tw,wTipFrac,hTipFrac = p
     wTip, hTip = w*wTipFrac, h*hTipFrac
-    hubx, huby = 0.47, 0.5
+    hr = hole_relative_fn(geo or {})
+    hubx, huby = 0.52, 0.5
     fanspread, lenscale = 108.0, 0.42
     def curved(x1,y1,x2,y2,bow_amt,hh,ww):
+        x1,y1 = hr(x1,y1); x2,y2 = hr(x2,y2)
         mx,my = (x1+x2)/2, (y1+y2)/2
         dx,dy = x2-x1, y2-y1
         L = math.hypot(dx,dy) or 1e-6
         nx_,ny_ = -dy/L, dx/L
         return make_brace(x1,y1,x2,y2,hh,ww,curve_cp=(mx+nx_*bow_amt,my+ny_*bow_amt))
+    def hb(x1,y1,x2,y2,height,width,**kw):
+        x1,y1 = hr(x1,y1); x2,y2 = hr(x2,y2)
+        return make_brace(x1,y1,x2,y2,height,width,**kw)
     braces = [
-        make_brace(0.19,0.18,0.19,0.82,barh,barw),        # closing bar, near the neck block
-        curved(0.47,0.22,0.47,0.78,-0.05,th,tw),           # curved bridge-area patch, just above the hub
+        hb(0.19,0.18,0.19,0.82,barh,barw),        # closing bar, near the neck block
+        curved(0.52,0.22,0.52,0.78,-0.05,th,tw),   # curved bridge-area patch, just above the hub
     ]
     for i in range(n_braces):
         t = (i/(max(1,n_braces-1))) - 0.5 if n_braces>1 else 0.0
         ang = 90 + t*fanspread
         rad = math.radians(ang)
-        ex = hubx + math.sin(rad)*lenscale
-        ey = huby + math.cos(rad)*lenscale
-        braces.append(make_brace(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
-    braces.append(make_brace(0.90,0.47,0.90,0.53,th*0.7,tw*0.7))   # small tail brace
+        ex = hubx + math.sin(rad)*lenscale   # reference-frame endpoint; hb() below
+        ey = huby + math.cos(rad)*lenscale   # transforms hub AND tip consistently
+        braces.append(hb(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
+    braces.append(hb(0.90,0.47,0.90,0.53,th*0.7,tw*0.7))   # small tail brace
     return braces
 def fan_bounds(n_braces):
     return [(4,20),(2,12),(3,14),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
 
-def falcate_encode(p):
+def falcate_encode(p, geo=None):
     """Fixed falcate layout taken directly from a real project file the
     user built and exported (not reverse-engineered from a DXF sketch) --
     every position and curve control point below is the actual data,
@@ -2845,24 +2919,30 @@ def falcate_encode(p):
     h1,w1,h2,w2,h3,w3,h4,w4,h5,w5,h6,w6,wTipFrac,hTipFrac = p
     w1Tip,h1Tip = w1*wTipFrac, h1*hTipFrac
     w2Tip,h2Tip = w2*wTipFrac, h2*hTipFrac
+    hr = hole_relative_fn(geo or {})
+    def hb(x1,y1,x2,y2,height,width,curve_cp=None,curve_cp2=None,**kw):
+        x1,y1 = hr(x1,y1); x2,y2 = hr(x2,y2)
+        if curve_cp is not None: curve_cp = hr(*curve_cp)
+        if curve_cp2 is not None: curve_cp2 = hr(*curve_cp2)
+        return make_brace(x1,y1,x2,y2,height,width,curve_cp=curve_cp,curve_cp2=curve_cp2,**kw)
     return [
         # Main sweep pair -- long, single-bow curves (quadratic, matching
         # the source file's own curve data exactly).
-        make_brace(0.94,0.281,0.258,0.243,h1,w1,curve_cp=(0.795,0.647),height_tip=h1Tip,width_tip=w1Tip),
-        make_brace(0.94,0.721,0.260,0.758,h1,w1,curve_cp=(0.767,0.340),height_tip=h1Tip,width_tip=w1Tip),
+        hb(0.94,0.281,0.258,0.243,h1,w1,curve_cp=(0.795,0.647),height_tip=h1Tip,width_tip=w1Tip),
+        hb(0.94,0.721,0.260,0.758,h1,w1,curve_cp=(0.767,0.340),height_tip=h1Tip,width_tip=w1Tip),
         # Secondary sweep pair -- shorter, nested alongside the main one.
-        make_brace(0.855,0.138,0.541,0.207,h2,w2,curve_cp=(0.693,0.561),height_tip=h2Tip,width_tip=w2Tip),
-        make_brace(0.866,0.859,0.544,0.762,h2,w2,curve_cp=(0.700,0.448),height_tip=h2Tip,width_tip=w2Tip),
+        hb(0.855,0.138,0.541,0.207,h2,w2,curve_cp=(0.693,0.561),height_tip=h2Tip,width_tip=w2Tip),
+        hb(0.866,0.859,0.544,0.762,h2,w2,curve_cp=(0.700,0.448),height_tip=h2Tip,width_tip=w2Tip),
         # V-strut-like pair, nearer the soundhole.
-        make_brace(0.365,0.329,0.252,0.426,h3,w3),
-        make_brace(0.260,0.579,0.373,0.673,h3,w3),
+        hb(0.365,0.329,0.252,0.426,h3,w3),
+        hb(0.260,0.579,0.373,0.673,h3,w3),
         # Mid-body connector pair.
-        make_brace(0.685,0.108,0.689,0.324,h4,w4),
-        make_brace(0.686,0.665,0.690,0.885,h4,w4),
+        hb(0.685,0.108,0.689,0.324,h4,w4),
+        hb(0.686,0.665,0.690,0.885,h4,w4),
         # Central bridge-area patch.
-        make_brace(0.501,0.397,0.503,0.590,h5,w5),
+        hb(0.501,0.397,0.503,0.590,h5,w5),
         # Small tail brace -- no mirror in the source file; kept asymmetric.
-        make_brace(0.957,0.421,0.888,0.533,h6,w6),
+        hb(0.92,0.421,0.888,0.533,h6,w6),
     ]
 FALCATE_BOUNDS = [(6,20),(2,10),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
@@ -2881,7 +2961,7 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         T = temp_scale * (0.995**it)
         step = np.array([(hi-lo) for lo,hi in bounds]) * (0.25*T + 0.02)
         cand = clip(x + np.random.normal(0,1,n)*step) if it>0 else x
-        braces = encode_fn(cand)
+        braces = encode_fn(cand, geo)
         result = evaluate_design(geo, braces, n_modes, meas_xy)
         for i,t in enumerate(targets):
             if result.get('ok') and result.get('measShapes') and i < len(result['measShapes']):
@@ -2896,12 +2976,12 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
             progress_cb(label, it, iters, best_cost, best_result)
             await asyncio.sleep(0)
     if best_result is None:
-        best_result = evaluate_design(geo, encode_fn(best_x), n_modes, meas_xy)
+        best_result = evaluate_design(geo, encode_fn(best_x, geo), n_modes, meas_xy)
         best_cost = objective(best_result, targets, defl_limit_mm, mass_weight)
-    return best_x, best_cost, best_result, encode_fn(best_x)
+    return best_x, best_cost, best_result, encode_fn(best_x, geo)
 
 # ── Simulated annealing over a variable-length free brace topology ──────
-async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0):
+async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None):
     """Unconstrained search has no reason to ever land on a left-right
     symmetric layout by chance -- a symmetric configuration is a
     vanishingly small slice of the full search space, so pure random
@@ -2911,13 +2991,27 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     symmetric=True the search only ever touches ONE half of the plate
     (fy < 0.5) and every brace's mirror image is added automatically at
     evaluation time -- symmetry is guaranteed by construction, not hoped
-    for. max_braces is interpreted as the total (mirrored) count."""
+    for. max_braces is interpreted as the total (mirrored) count.
+
+    materials, when given, is a list of {'modulus','density'} options the
+    search can assign per brace (each new brace gets a random pick, and a
+    mutation can flip an existing brace to a different one) -- currently
+    only passed in for Novel-experimental; plain Novel always uses the
+    single global material, unchanged. A mirrored brace always gets the
+    SAME material as its mirror partner, not an independent pick, since a
+    real soundboard wouldn't have asymmetric material choice on an
+    otherwise-symmetric layout."""
     half_cap = max(1, max_braces//2) if symmetric else max_braces
     fy_lo, fy_hi = (0.15, 0.47) if symmetric else (0.15, 0.85)
+
+    def rand_material():
+        if not materials: return None
+        return dict(random.choice(materials))
 
     def mirror_brace(b):
         m = dict(b, pts=[{'fx':pp['fx'], 'fy':1.0-pp['fy']} for pp in b['pts']])
         if b.get('cp'): m['cp'] = {'fx':b['cp']['fx'], 'fy':1.0-b['cp']['fy']}
+        if b.get('cp2'): m['cp2'] = {'fx':b['cp2']['fx'], 'fy':1.0-b['cp2']['fy']}
         return m
     def expand(bl):
         if not symmetric: return bl
@@ -2930,7 +3024,9 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         x1,y1 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
         x2,y2 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
         h = random.uniform(4,22); w = random.uniform(2,12)
-        b = make_brace(x1,y1,x2,y2,h,w, height_tip=h*random.uniform(0.4,1.0), width_tip=w*random.uniform(0.4,1.0))
+        mat = rand_material()
+        b = make_brace(x1,y1,x2,y2,h,w, height_tip=h*random.uniform(0.4,1.0), width_tip=w*random.uniform(0.4,1.0),
+                        modulus=(mat['modulus'] if mat else None), density=(mat['density'] if mat else None))
         if random.random() < 0.4:
             mx,my = (x1+x2)/2, (y1+y2)/2
             dx,dy = x2-x1, y2-y1; L = math.hypot(dx,dy) or 1e-6
@@ -2941,6 +3037,13 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     if warm_braces:
         braces = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {}))
                   for b in (warm_braces[::2] if symmetric else warm_braces)]
+        if materials:
+            # Warm-started braces may come from a prior single-material run
+            # (or a different material set) -- assign each a valid pick
+            # from the CURRENT palette rather than keeping a stale value.
+            for b in braces:
+                mat = rand_material()
+                if mat: b['modulus'], b['density'] = mat['modulus'], mat['density']
     else:
         braces = [rand_brace() for _ in range(random.randint(1, max(1,half_cap)))]
     n_modes = len(targets)
@@ -2949,22 +3052,34 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         return objective(r, targets, defl_limit_mm, mass_weight), r
     cur_cost, cur_result = evalb(braces)
     best_braces, best_cost, best_result = [dict(b) for b in braces], cur_cost, cur_result
+    # Material-flip mutation gets its own slice of the move budget only
+    # when a materials palette was actually given -- otherwise the move
+    # probabilities below are unchanged from the single-material search.
+    mat_move_cutoff = 0.06 if materials else 0.0
     for it in range(iters):
         if CANCEL_FLAG['stop']:
             break
         T = temp_scale*(0.995**it)
         cand = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {})) for b in braces]
         move = random.random()
-        if move < 0.12 and len(cand) < half_cap:
+        if materials and move < mat_move_cutoff and cand:
+            # Flip one brace to a different material from the palette --
+            # this is the actual mixed-material search: position/dimension
+            # mutations below are unchanged, this just adds material choice
+            # as its own independent variable per brace.
+            b = cand[random.randrange(len(cand))]
+            mat = rand_material()
+            if mat: b['modulus'], b['density'] = mat['modulus'], mat['density']
+        elif move < mat_move_cutoff+0.12 and len(cand) < half_cap:
             cand.append(rand_brace())
-        elif move < 0.24 and len(cand) > 1:
+        elif move < mat_move_cutoff+0.24 and len(cand) > 1:
             cand.pop(random.randrange(len(cand)))
-        elif move < 0.55 and cand:
+        elif move < mat_move_cutoff+0.55 and cand:
             b = cand[random.randrange(len(cand))]
             pt = b['pts'][random.randrange(2)]
             pt['fx'] = clamp01(pt['fx'] + random.uniform(-0.08,0.08)*T*2+random.uniform(-0.02,0.02))
             pt['fy'] = max(fy_lo, min(fy_hi, pt['fy'] + random.uniform(-0.08,0.08)*T*2+random.uniform(-0.02,0.02)))
-        elif move < 0.80 and cand:
+        elif move < mat_move_cutoff+0.80 and cand:
             # Resize cross-section -- center and tip dimensions mutate somewhat
             # independently, so width and height can each end up tapered
             # differently (or not at all).
@@ -3031,6 +3146,14 @@ async def run_all_patterns(payload_json):
         symmetric = p.get('symmetric', True)
         BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 10e9))
         BRACE_MATERIAL['density'] = float(p.get('braceDensity', 420.0))
+        # Mixed-material search is Novel-experimental only, per an explicit
+        # request that plain Novel keep using a single material like every
+        # other pattern. Two options for now (spruce, carbon fiber); the
+        # UI's materials table is the source of truth for their properties.
+        exp_materials = [
+            {'modulus': float(p.get('expMatSpruceE', 10e9)), 'density': float(p.get('expMatSpruceRho', 420.0))},
+            {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0))},
+        ]
 
         results = {}   # key -> (braces, coarse_cost, coarse_x)
         if 'xbrace' in patterns and not CANCEL_FLAG['stop']:
@@ -3038,7 +3161,7 @@ async def run_all_patterns(payload_json):
                                                     defl_limit_mm, mass_weight, iters, _progress, 'xbrace')
             results['xbrace'] = (braces, cost, coarse_x)
         if 'fan' in patterns and not CANCEL_FLAG['stop']:
-            enc = lambda pp: fan_encode(pp, fan_n)
+            enc = lambda pp, g: fan_encode(pp, fan_n, g)
             coarse_x, cost, _, braces = await sa_continuous(enc, fan_bounds(fan_n), geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'fan')
             results['fan'] = (braces, cost, coarse_x)
@@ -3053,17 +3176,16 @@ async def run_all_patterns(payload_json):
         if 'novelExperimental' in patterns and not CANCEL_FLAG['stop']:
             # Same search, same mass penalty keeping it honest -- just with
             # the symmetry requirement and the tight brace-count cap both
-            # removed, so it's free to go somewhere the constrained version
-            # structurally can't reach. That freedom comes at a real cost
-            # though: symmetry mode only ever searches HALF the plate and
-            # mirrors it, and the brace cap is much lower, so this pattern's
-            # search space is substantially larger for the same iteration
-            # count -- giving it the identical budget as "novel" understates
-            # it. exp_scale (above) compensates, and carries into its polish
-            # stage below too.
+            # removed, so it has a substantially larger space to explore
+            # than "novel" for the same iteration count. exp_scale (above)
+            # compensates, and carries into its polish stage below too.
+            # This is also the only pattern given a materials palette --
+            # spruce and carbon fiber -- so it can assign each brace its
+            # own material rather than one fixed material for everything.
             iters_exp = int(iters * exp_scale)
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
-                                                    max_braces_exp, iters_exp, _progress, 'novelExperimental', symmetric=False)
+                                                    max_braces_exp, iters_exp, _progress, 'novelExperimental',
+                                                    symmetric=False, materials=exp_materials)
             results['novelExperimental'] = (braces, cost, None)
 
         # ── Polish each coarse winner at full resolution ──
@@ -3083,7 +3205,7 @@ async def run_all_patterns(payload_json):
         polish_iters = max(40, min(200, iters//4))
         ENCODERS = {
             'xbrace': (xbrace_encode, XBRACE_BOUNDS),
-            'fan': (lambda pp: fan_encode(pp, fan_n), fan_bounds(fan_n)),
+            'fan': (lambda pp, g: fan_encode(pp, fan_n, g), fan_bounds(fan_n)),
             'falcate': (falcate_encode, FALCATE_BOUNDS),
         }
         for key, (braces, coarse_cost, coarse_x) in results.items():
@@ -3095,9 +3217,10 @@ async def run_all_patterns(payload_json):
                 sym = symmetric if key == 'novel' else False
                 cap = max_braces if key == 'novel' else max_braces_exp
                 this_polish_iters = polish_iters if key == 'novel' else int(polish_iters * exp_scale)
+                mats = exp_materials if key == 'novelExperimental' else None
                 polished_braces, polished_cost, r = await sa_free_topology(
                     hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
-                    this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15)
+                    this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15, materials=mats)
             else:
                 enc, bounds = ENCODERS[key]
                 # Warm-start the polish search from the coarse winner's own
