@@ -322,7 +322,8 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="check-row"><input type="checkbox" id="genFalcate" checked><label style="margin:0">Falcate (curved / sickle)</label></div>
       <div class="check-row"><input type="checkbox" id="genNovel" checked><label style="margin:0">Novel — free topology</label></div>
       <div class="check-row"><input type="checkbox" id="genNovelExperimental"><label style="margin:0">Novel — experimental (asymmetric, unconstrained)</label></div>
-      <div class="sbar-hint">Only "Novel" and "Novel — experimental" search brace positions; the others optimize dimensions only on a fixed layout. See Documentation.</div>
+      <div class="check-row"><input type="checkbox" id="genCustom"><label style="margin:0">Custom (optimize your own uploaded design)</label></div>
+      <div class="sbar-hint">Only "Novel", "Novel — experimental", and "Custom" search positions. See Documentation.</div>
     </div>
     <div class="sbar-section" id="novelExperimentalSettings" style="display:none">
       <div class="sbar-title">Novel — experimental settings</div>
@@ -330,7 +331,7 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
     </div>
     <div class="sbar-section" id="multiMaterialSettings" style="display:none">
       <div class="sbar-title">Materials available to this solver</div>
-      <div class="sbar-hint">Mixed-material search (assigning different braces different materials within the same run) isn't implemented yet — every brace still uses the single "Brace material" set below. This is a preview of the materials palette it will draw from once that's in place; edit the properties here if your actual stock differs.</div>
+      <div class="sbar-hint">Preview only — mixed-material search isn't implemented yet. See Documentation.</div>
       <table style="width:100%; margin-top:10px; border-collapse:collapse; font-size:11px; color:var(--text)">
         <thead>
           <tr style="color:var(--dim); font-size:9.5px; text-transform:uppercase; letter-spacing:.08em">
@@ -352,7 +353,7 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
           </tr>
         </tbody>
       </table>
-      <div class="sbar-hint">Carbon fiber's default values are for a unidirectional structural composite (rod or lamina) along the fiber direction — not the "carbon-fiber reinforced" hybrid preset below, which represents a wood/CF blend at a much lower effective stiffness.</div>
+      <div class="sbar-hint">Not the same as "carbon-fiber reinforced" below — see Documentation.</div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Fan settings</div>
@@ -371,6 +372,28 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
       <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
     </div>
+    <div class="sbar-section" id="customPatternSettings" style="display:none">
+      <div class="sbar-title">Custom — design to optimize</div>
+      <div class="sbar-hint">Doesn't affect "Novel" or "Novel — experimental" — see Documentation.</div>
+      <button class="btn" id="seedUploadBtn" style="width:100%; margin-top:8px">Choose file…</button>
+      <input type="file" id="seedUploadInput" accept="application/json" style="display:none">
+      <div class="sbar-hint" id="seedUploadStatus" style="margin-top:6px"></div>
+      <div class="sbar-hint">Accepts a file from this tool or the paired Visualizer.</div>
+      <div id="seedPreviewWrap" style="display:none; margin-top:10px">
+        <canvas id="seedPreviewCanvas" width="260" height="340" style="width:100%; max-width:220px; display:block; margin:0 auto; background:#0a0908; border:1px solid var(--border2); border-radius:4px"></canvas>
+        <div class="sbar-hint" style="text-align:center; margin-top:4px">If this doesn't match your body's actual orientation, use the buttons below — they change the design, not just the preview.</div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn" id="seedRotateCW" style="font-size:11px">⟳ Rotate 90°</button>
+          <button class="btn" id="seedRotateCCW" style="font-size:11px">⟲ Rotate 90°</button>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn" id="seedFlipH" style="font-size:11px">⇋ Flip left-right</button>
+          <button class="btn" id="seedFlipV" style="font-size:11px">⇕ Flip top-bottom</button>
+        </div>
+      </div>
+      <div class="check-row" style="margin-top:10px"><input type="checkbox" id="customLockPositions"><label style="margin:0">Lock brace positions</label></div>
+      <div class="sbar-hint">Dimensions only, layout untouched (except to clear the soundhole, which always takes priority). See Documentation.</div>
+    </div>
     <div class="sbar-section">
       <div class="sbar-title">Novel pattern settings</div>
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
@@ -383,8 +406,10 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="param-row inline"><label>Iterations per pattern</label><input type="number" id="optIters" value="900" min="100" max="4000"></div>
       <div class="sbar-hint">Raise this if results barely change between runs or iterations.</div>
       <div class="sbar-hint">Struggling to hit several tight targets at once? See Documentation for tuning tips.</div>
+      <div class="check-row" style="margin-top:10px"><input type="checkbox" id="optPolishEnabled" checked><label style="margin:0">Polish at full resolution</label></div>
+      <div class="sbar-hint">Re-optimizes the coarse winner at hi-fi resolution before showing it. Off = faster, but the coarse result is shown as-is. See Documentation.</div>
       <div class="param-row inline"><label>Final display resolution (GN)</label><input type="number" id="finalDisplayGN" value="150" min="50" max="300"></div>
-      <div class="sbar-hint">A finite-difference solve like this one converges from above — coarse grids overestimate stiffness, so frequencies (especially higher modes) drop as resolution increases, until it settles near the true value. Search itself has to run at a much coarser, faster resolution (hundreds of solves per pattern), so this runs one extra solve per pattern afterward, at this higher resolution, purely for the numbers actually shown. Raise it to match a Visualizer cross-check more closely; cost is one solve per pattern, not per iteration, but do expect it to take real time at high values (Visualizer's own GN=260 took ~53s for one solve).</div>
+      <div class="sbar-hint">Higher = closer to a Visualizer cross-check, but slower. See Documentation.</div>
       <div class="param-row inline"><label>Mass penalty weight</label><input type="number" id="massWeight" value="0.15" step="0.05"></div>
       <button class="btn primary" id="runOptimizeBtn">▶ Generate &amp; compare</button>
       <button class="btn danger" id="stopOptimizeBtn" disabled>■ Stop</button>
@@ -466,6 +491,7 @@ const PATTERN_META = {
   falcate: { label:'Falcate (curved)', color:'#b06fc9' },
   novel:   { label:'Novel — free topology', color:'#d4a832' },
   novelExperimental: { label:'Novel — experimental', color:'#e8664a' },
+  custom:  { label:'Custom (from your design)', color:'#5fa8d4' },
 };
 
 /* ============================================================
@@ -578,14 +604,38 @@ document.getElementById('helpBtn').onclick = ()=>{
   design that's near-optimal on a coarse grid isn't guaranteed to still be optimal on a finer one — deflection especially is
   sensitive to grid resolution right at the load point.</p>
   <p><b>Fixed vs. free patterns:</b> X-brace, fan, and falcate hold to a fixed reference layout each (positions, angles, and
-  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel" and "Novel — experimental"
-  are the only patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the search only
-  touches one half of the plate and mirrors it for evaluation) — leave this on unless deliberately exploring asymmetric
-  bracing, since an unconstrained search has no reason to land on a symmetric layout by chance, and asymmetric mode shapes
-  skew the radiation pattern and bass/treble balance even when frequencies land on target. "Experimental" is the same free
-  search with the symmetry requirement and brace-count cap both removed — it isn't unconstrained, since the same mass
-  penalty still applies, just far less boxed in. Brace material (modulus, density) is set once per run and applied to every
-  brace in every pattern; it's an isotropic-beam approximation, not modeling wood grain direction/anisotropy.</p>
+  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel", "Novel — experimental",
+  and "Custom" are the only patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the
+  search only touches one half of the plate and mirrors it for evaluation) — leave this on unless deliberately exploring
+  asymmetric bracing, since an unconstrained search has no reason to land on a symmetric layout by chance, and asymmetric
+  mode shapes skew the radiation pattern and bass/treble balance even when frequencies land on target. "Experimental" is
+  the same free search with the symmetry requirement and brace-count cap both removed — it isn't unconstrained, since the
+  same mass penalty still applies, just far less boxed in. Brace material (modulus, density) is set once per run and
+  applied to every brace in every pattern; it's an isotropic-beam approximation, not modeling wood grain
+  direction/anisotropy.</p>
+  <p><b>Custom</b> optimizes a design you upload (from this tool, the paired Visualizer, or a bare braces array — axis
+  convention is detected and corrected automatically) rather than a random or template layout, and runs as its own
+  independent result alongside whatever else is checked — check "Novel" and "Custom" together to compare a freshly
+  generated pattern against a tuned version of your own design side by side. If nothing's uploaded, Custom is skipped even
+  if checked. <b>Lock brace positions</b> restricts its search to cross-section dimensions only — no brace is added,
+  removed, moved, or bent, so the exact layout you drew stays exactly where it was; turn this on when the layout itself is
+  already deliberate and only the sizing should be tuned.</p>
+  <p><b>Novel — experimental's materials palette</b> (spruce/carbon fiber properties, editable) is currently a preview —
+  every brace in every pattern, including Experimental, still uses the single "Brace material" set above it. Once
+  mixed-material search is implemented, Experimental will be able to assign each brace its own material from this palette.
+  Carbon fiber's default values (E≈135 GPa, ρ≈1600 kg/m³) are for a real unidirectional structural composite along the
+  fiber direction — a different, much stiffer material than the "carbon-fiber reinforced" preset in the Brace material
+  dropdown below, which represents a wood/CF hybrid laminate at a lower effective stiffness.</p>
+  <p><b>Polish at full resolution</b> re-optimizes each coarse winner with a short additional search at hi-fi resolution
+  before showing it, since a design that's near-optimal on the coarse search grid isn't guaranteed to still be optimal on
+  a finer one — deflection especially is sensitive to grid resolution right at the load point. Turning it off shows the
+  coarse-search result as-is (still re-measured, just not re-optimized) — faster, at the cost of that extra refinement.</p>
+  <p><b>Final display resolution (GN):</b> a finite-difference solve like this one converges from above — coarse grids
+  overestimate stiffness, so frequencies (especially higher modes) drop as resolution increases, until settling near the
+  true value. Search has to run at a much coarser, faster resolution (hundreds of solves per pattern), so after it
+  finishes, one extra solve per pattern runs at this higher resolution, purely for the numbers actually shown — not per
+  iteration, so it's a small fixed cost regardless of how long the search itself took. Raise it to match a Visualizer
+  cross-check more closely; do expect real time at high values (Visualizer's own GN=260 took ~53s for one solve).</p>
   <p><b>If the search grid resolution feels too coarse</b> — results barely changing between runs or across iterations —
   raise it; cost is search speed, scaling roughly with the square of that number.</p>
   <p><b>Tuning tips for hitting tight tolerances on several targets at once:</b> run-to-run variance is real and worth
@@ -1815,6 +1865,9 @@ document.getElementById('genNovelExperimental').onchange = e=>{
   document.getElementById('novelExperimentalSettings').style.display = e.target.checked ? 'block' : 'none';
   document.getElementById('multiMaterialSettings').style.display = e.target.checked ? 'block' : 'none';
 };
+document.getElementById('genCustom').onchange = e=>{
+  document.getElementById('customPatternSettings').style.display = e.target.checked ? 'block' : 'none';
+};
 const BRACE_MAT_PRESETS = { spruce:{E:10,rho:420}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
 document.getElementById('braceMatPreset').onchange = e=>{
   const p = BRACE_MAT_PRESETS[e.target.value]; if(!p) return;
@@ -1832,6 +1885,13 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
   if(document.getElementById('genFalcate').checked) patterns.push('falcate');
   if(document.getElementById('genNovel').checked) patterns.push('novel');
   if(document.getElementById('genNovelExperimental').checked) patterns.push('novelExperimental');
+  if(document.getElementById('genCustom').checked){
+    if(!customSeedBraces || !customSeedBraces.length){
+      logStatus(document.getElementById('genStatus'), '"Custom" is checked but no design has been uploaded — choose a file or uncheck it.', 'err');
+      return;
+    }
+    patterns.push('custom');
+  }
   if(!patterns.length){ logStatus(document.getElementById('genStatus'), 'Select at least one pattern to generate.', 'err'); return; }
 
   const GN = +document.getElementById('optGN').value;
@@ -1865,6 +1925,9 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
     expMatSpruceRho: +document.getElementById('matSpruceRho').value,
     expMatCarbonE: +document.getElementById('matCarbonE').value*1e9,
     expMatCarbonRho: +document.getElementById('matCarbonRho').value,
+    seedBraces: customSeedBraces,
+    customLockPositions: document.getElementById('customLockPositions').checked,
+    polishEnabled: document.getElementById('optPolishEnabled').checked,
   };
   document.getElementById('genLog').textContent = '';
   document.getElementById('genProgressFill').style.width='0%';
@@ -1905,43 +1968,81 @@ function scorePattern(res){
 
 function renderResults(){
   const grid = document.getElementById('resultsGrid');
-  const keys = Object.keys(GEN.results);
+  // Seed-only entries (an uploaded design, or a bare loaded project) are
+  // staging data for the "Custom" pattern's search input, not completed
+  // solve results -- they're missing fields like deflection and mass
+  // that every real result has, so trying to render them as a results
+  // card threw partway through and (before the per-card guard above)
+  // could take the whole grid down with them. They still show up fine
+  // in the "start from an existing design" dropdown; they just don't
+  // belong in this comparison view.
+  // Detect seed-only entries both by the explicit flag (new entries) and
+  // structurally, by the fields every real completed result has but a
+  // seed placeholder doesn't -- a project saved before this flag existed
+  // still has an old "uploadedSeed"/"loaded" entry with neither flag NOR
+  // those fields, and needs to be caught the same way.
+  const isSeedOnlyEntry = r => r.isSeedOnly || r.massG==null || r.deflBridgeMm==null;
+  const keys = Object.keys(GEN.results).filter(k => !isSeedOnlyEntry(GEN.results[k]));
   if(!keys.length){ grid.innerHTML = '<div class="tag-note">Run step 4 to see results here.</div>'; return; }
-  const scores = {}; keys.forEach(k=> scores[k]=scorePattern(GEN.results[k]));
-  const sortedKeys = [...keys].sort((a,b)=> scores[a]-scores[b]); // best (lowest) first, grid flows left-to-right/top-to-bottom
-  const bestKey = sortedKeys[0];
-  const targets = buildTargetsPayload();
+  let scores, sortedKeys, bestKey, targets;
+  try{
+    scores = {}; keys.forEach(k=> scores[k]=scorePattern(GEN.results[k]));
+    sortedKeys = [...keys].sort((a,b)=> scores[a]-scores[b]); // best (lowest) first, grid flows left-to-right/top-to-bottom
+    bestKey = sortedKeys[0];
+    targets = buildTargetsPayload();
+  } catch(err){
+    // Something upstream of any individual card is broken (e.g. a
+    // malformed target/mode) -- show it rather than leaving a blank
+    // panel with no clue why, which is what happened before this guard.
+    console.error('renderResults: failed before per-card rendering:', err);
+    grid.innerHTML = `<div class="tag-note">Couldn't render results: ${err.message}. Check the browser console for details.</div>`;
+    return;
+  }
   grid.innerHTML = '';
   sortedKeys.forEach(key=>{
-    const res = GEN.results[key];
-    const meta = PATTERN_META[key] || {label:key, color:'#c8903a'};
-    const card = document.createElement('div');
-    card.className = 'pattern-card' + (key===bestKey ? ' best' : '');
-    const deflOk = res.ok && res.deflBridgeMm <= GEO.deflLimitMm;
-    card.innerHTML = `
-      <div class="pattern-card-hdr"><h3>${meta.label}${key===bestKey?' 🏆':''}</h3><span class="pill">${res.ok? (res.braces?res.braces.length:0)+' brace(s)' : 'failed'}</span></div>
-      <div class="pattern-card-body">
-        <div class="pattern-canvas-wrap"><canvas width="380" height="290" id="rescanvas_${key}"></canvas></div>
-        <div style="margin-top:8px">
-          ${targets.map((t,i)=>{
-            const f = res.ok ? res.freqs[i] : null;
-            const err = f!=null ? Math.abs(f-t.freq) : null;
-            const good = err!=null && err<=t.tol;
-            return `<div class="metric-row"><span>target ${t.freq.toFixed(0)}±${t.tol.toFixed(0)}Hz</span><span class="v ${f==null?'bad':(good?'good':'bad')}">${f!=null?f.toFixed(1)+' Hz':'missing'}</span></div>`;
-          }).join('')}
-          <div class="metric-row"><span>Bridge deflection (limit ${GEO.deflLimitMm}mm)</span><span class="v ${res.ok?(deflOk?'good':'bad'):'bad'}">${res.ok?res.deflBridgeMm.toFixed(3)+' mm':'—'}</span></div>
-          ${res.torqueRequested && !res.torqueResolved ? '<div class="tag-note" style="margin-top:6px">⚠ Bridge torque had no effect here — the bridge footprint is shallower than this grid can resolve, so there was no room to apply a moment across it.</div>' : ''}
-          <div class="metric-row"><span>Added brace mass</span><span class="v">${res.ok?res.massG.toFixed(1)+' g':'—'}</span></div>
-          <div class="metric-row"><span>Composite score (lower=better)</span><span class="v">${isFinite(scores[key])?scores[key].toFixed(1):'—'}</span></div>
-        </div>
-        ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces) : ''}
-        <div class="btn-row" style="margin-top:8px">
-          <button class="btn" data-export="${key}">💾 Export as bracing-tool project…</button>
-          <button class="btn primary" data-openviz="${key}" ${res.ok && res.braces && res.braces.length ? '' : 'disabled'}>↗ Open in Visualizer</button>
-        </div>
-      </div>`;
-    grid.appendChild(card);
-    requestAnimationFrame(()=> drawPatternCanvas(key, res, meta.color));
+    try{
+      const res = GEN.results[key];
+      const meta = PATTERN_META[key] || {label:key, color:'#c8903a'};
+      const card = document.createElement('div');
+      card.className = 'pattern-card' + (key===bestKey ? ' best' : '');
+      const deflOk = res.ok && res.deflBridgeMm <= GEO.deflLimitMm;
+      card.innerHTML = `
+        <div class="pattern-card-hdr"><h3>${meta.label}${key===bestKey?' 🏆':''}</h3><span class="pill">${res.ok? (res.braces?res.braces.length:0)+' brace(s)' : 'failed'}</span></div>
+        <div class="pattern-card-body">
+          <div class="pattern-canvas-wrap"><canvas width="380" height="290" id="rescanvas_${key}"></canvas></div>
+          <div style="margin-top:8px">
+            ${targets.map((t,i)=>{
+              const f = res.ok ? res.freqs[i] : null;
+              const err = f!=null ? Math.abs(f-t.freq) : null;
+              const good = err!=null && err<=t.tol;
+              return `<div class="metric-row"><span>target ${t.freq.toFixed(0)}±${t.tol.toFixed(0)}Hz</span><span class="v ${f==null?'bad':(good?'good':'bad')}">${f!=null?f.toFixed(1)+' Hz':'missing'}</span></div>`;
+            }).join('')}
+            <div class="metric-row"><span>Bridge deflection (limit ${GEO.deflLimitMm}mm)</span><span class="v ${res.ok?(deflOk?'good':'bad'):'bad'}">${res.ok?res.deflBridgeMm.toFixed(3)+' mm':'—'}</span></div>
+            ${res.torqueRequested && !res.torqueResolved ? '<div class="tag-note" style="margin-top:6px">⚠ Bridge torque had no effect here — the bridge footprint is shallower than this grid can resolve, so there was no room to apply a moment across it.</div>' : ''}
+            <div class="metric-row"><span>Added brace mass</span><span class="v">${res.ok?res.massG.toFixed(1)+' g':'—'}</span></div>
+            <div class="metric-row"><span>Composite score (lower=better)</span><span class="v">${isFinite(scores[key])?scores[key].toFixed(1):'—'}</span></div>
+          </div>
+          ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces) : ''}
+          <div class="btn-row" style="margin-top:8px">
+            <button class="btn" data-export="${key}">💾 Export as bracing-tool project…</button>
+            <button class="btn primary" data-openviz="${key}" ${res.ok && res.braces && res.braces.length ? '' : 'disabled'}>↗ Open in Visualizer</button>
+          </div>
+        </div>`;
+      grid.appendChild(card);
+      requestAnimationFrame(()=> drawPatternCanvas(key, res, meta.color));
+    } catch(err){
+      // One malformed result (e.g. from an older save, or a pattern that
+      // failed in an unexpected way) used to take the ENTIRE grid down
+      // with it -- everything after grid.innerHTML='' simply never got
+      // appended if any single card threw partway through building its
+      // HTML. Contained here, every other card still renders normally.
+      console.error(`renderResults: card for "${key}" failed to render:`, err);
+      const errCard = document.createElement('div');
+      errCard.className = 'pattern-card';
+      errCard.innerHTML = `<div class="pattern-card-hdr"><h3>${key}</h3><span class="pill">error</span></div>
+        <div class="pattern-card-body"><div class="tag-note">Couldn't render this result: ${err.message}. Check the browser console for details.</div></div>`;
+      grid.appendChild(errCard);
+    }
   });
   grid.querySelectorAll('[data-export]').forEach(btn=>{
     btn.onclick = ()=> exportPatternProject(btn.dataset.export);
@@ -2232,7 +2333,7 @@ function applyVisualizerFormatProject(proj){
   });
   if(proj.braces && proj.braces.length){
     const swappedBraces = proj.braces.map(b => ({ ...b, pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null }));
-    GEN.results['loaded'] = { ok:true, braces: swappedBraces, freqs: (proj.hifi&&proj.hifi.freqs)||[] };
+    GEN.results['loaded'] = { ok:true, braces: swappedBraces, freqs: (proj.hifi&&proj.hifi.freqs)||[], isSeedOnly:true };
   }
   document.getElementById('geoLx').value = Math.round(GEO.Lx*1000);
   document.getElementById('geoLy').value = Math.round(GEO.Ly*1000);
@@ -2242,6 +2343,118 @@ function applyVisualizerFormatProject(proj){
   forceGeoRedraw(); renderResults();
   goToPanel(proj.braces && proj.braces.length ? 'panelResults' : 'panelGeo');
 }
+/* Extracts just the braces from an uploaded file, for seeding Novel /
+   Novel-experimental, WITHOUT touching the current plate/outline/modes
+   setup the way a full project load would -- this is additive, not a
+   session replacement. Accepts either this tool's own project format or
+   a bracing-visualizer-format file, applying the axis swap when needed. */
+function extractSeedBraces(proj){
+  if(proj.aState && proj.traceShape){
+    // Visualizer-format file: fx=width/fy=length, opposite of this tool's
+    // own convention -- swap every point and control point.
+    if(!proj.braces || !proj.braces.length) return null;
+    return proj.braces.map(b => ({ ...b, pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null }));
+  }
+  if(proj.GEN && proj.GEN.results){
+    // This tool's own session format -- braces are already in this
+    // tool's convention; pull the best-scoring pattern's braces.
+    const keys = Object.keys(proj.GEN.results);
+    if(!keys.length) return null;
+    const withScore = keys.map(k=>({k, r:proj.GEN.results[k]})).filter(x=>x.r && x.r.braces && x.r.braces.length);
+    if(!withScore.length) return null;
+    return withScore[0].r.braces;
+  }
+  if(Array.isArray(proj.braces) && proj.braces.length){
+    // A bare braces array, already in this tool's convention.
+    return proj.braces;
+  }
+  return null;
+}
+document.getElementById('seedUploadBtn').onclick = ()=> document.getElementById('seedUploadInput').click();
+let customSeedBraces = null;
+let customSeedLabel = '';
+
+/* Small standalone preview -- deliberately not reusing drawPatternCanvas
+   directly since that renders a full solve RESULT (with the shared
+   canvas-fit/DPI logic tied to result cards); this only ever needs to
+   show the current outline + hole + whatever's in customSeedBraces, and
+   has to redraw instantly after every rotate/flip click. */
+function renderSeedPreview(){
+  const wrap = document.getElementById('seedPreviewWrap');
+  if(!customSeedBraces || !customSeedBraces.length){ wrap.style.display='none'; return; }
+  wrap.style.display = 'block';
+  const cvs = document.getElementById('seedPreviewCanvas');
+  const ctx = cvs.getContext('2d'); const W=cvs.width, H=cvs.height;
+  ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  const aspect = GEO.Lx/GEO.Ly;
+  const drawH = Math.min(H*0.92, W*0.92*aspect), drawW = drawH/aspect;
+  const ox=(W-drawW)/2, oy=(H-drawH)/2;
+  const toPx = (fx,fy)=>[ox+fy*drawW, oy+fx*drawH];
+  if(GEO.outlinePts.length>=3){
+    const spline = catmullRomSpline(GEO.outlinePts, true, 150);
+    ctx.beginPath();
+    spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.closePath(); ctx.strokeStyle='#3a3936'; ctx.lineWidth=1; ctx.stroke();
+  }
+  if(GEO.holeR>0.001){
+    const [hx,hy]=toPx(GEO.holeCx,GEO.holeCy); const rpx=GEO.holeR*Math.min(drawW,drawH);
+    ctx.beginPath(); ctx.arc(hx,hy,rpx,0,Math.PI*2);
+    ctx.strokeStyle='#8a8680'; ctx.lineWidth=1; ctx.stroke();
+  }
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  customSeedBraces.forEach(b=>{
+    const fp = braceFootprintPoints(b, LxMm, LyMm);
+    ctx.beginPath();
+    fp.centerline.forEach((p,i)=>{ const [x,y]=toPx(p.x/LxMm,p.y/LyMm); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.strokeStyle='#5fa8d4'; ctx.lineWidth=2.5; ctx.stroke();
+  });
+}
+/* Rotate/flip transform every brace's endpoints and curve control points
+   together -- this changes customSeedBraces itself (what actually gets
+   sent to the solver), not just how the preview looks. All four are
+   defined around the plate's center (0.5,0.5) in this tool's own (fx =
+   length, fy = width) convention. */
+function transformSeedBraces(fn){
+  if(!customSeedBraces) return;
+  customSeedBraces = customSeedBraces.map(b=>{
+    const nb = { ...b, pts: b.pts.map(fn) };
+    if(b.cp) nb.cp = fn(b.cp);
+    if(b.cp2) nb.cp2 = fn(b.cp2);
+    return nb;
+  });
+  renderSeedPreview();
+}
+document.getElementById('seedRotateCW').onclick = ()=> transformSeedBraces(p=>({fx:p.fy, fy:1-p.fx}));
+document.getElementById('seedRotateCCW').onclick = ()=> transformSeedBraces(p=>({fx:1-p.fy, fy:p.fx}));
+document.getElementById('seedFlipH').onclick = ()=> transformSeedBraces(p=>({fx:p.fx, fy:1-p.fy}));
+document.getElementById('seedFlipV').onclick = ()=> transformSeedBraces(p=>({fx:1-p.fx, fy:p.fy}));
+
+document.getElementById('seedUploadInput').onchange = async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const status = document.getElementById('seedUploadStatus');
+  try{
+    const proj = JSON.parse(await file.text());
+    const braces = extractSeedBraces(proj);
+    if(!braces){
+      status.textContent = "Couldn't find any braces in that file.";
+      status.style.color = 'var(--danger)';
+      customSeedBraces = null; customSeedLabel = '';
+      renderSeedPreview();
+      return;
+    }
+    customSeedBraces = braces;
+    customSeedLabel = file.name;
+    status.textContent = `✓ Loaded ${braces.length} braces from "${file.name}". Check the orientation below before running.`;
+    status.style.color = 'var(--success)';
+    renderSeedPreview();
+  } catch(err){
+    status.textContent = 'Could not parse that file as JSON.';
+    status.style.color = 'var(--danger)';
+    customSeedBraces = null; customSeedLabel = '';
+    renderSeedPreview();
+  }
+  e.target.value = '';
+};
 document.getElementById('loadProjectInput').onchange = async e=>{
   const file = e.target.files[0]; if(!file) return;
   const badge = document.getElementById('loadStatusBadge');
@@ -2527,6 +2740,28 @@ def mac(a, b):
 
 # ── Core FEM evaluation: eigenmodes + static deflection under bridge load ──
 # ── Geometry validity: keep braces on the actual body and off the hole ──
+def brace_hole_violation(braces, hole_cx, hole_cy, hole_r, Lx, Ly, NS=14):
+    """Continuous measure of how much brace material occupies the
+    soundhole (0 if none does) -- used as a ratchet in the free-topology
+    search: a move is only allowed if it doesn't INCREASE this value, so
+    the search can still take intermediate steps to escape a design that
+    happens to start touching the hole, but can never introduce a new
+    violation or make an existing one worse once accepted. This still
+    enforces the real constraint (no material in the hole, ever) on any
+    converged result -- once violation reaches zero, no move that's
+    accepted can ever push it back above zero -- it just isn't a flat
+    reject on every touching state along the way, which would otherwise
+    trap a design that starts bad with no way to gradually move clear."""
+    hx, hy = hole_cx*Lx, hole_cy*Ly
+    hr = hole_r*min(Lx, Ly)
+    total = 0.0
+    for b in braces:
+        for x, y, sl, t in _sample_brace(b, Lx, Ly, NS):
+            d = math.hypot(x-hx, y-hy)
+            if d < hr:
+                total += (hr-d)**2
+    return total
+
 def brace_geometry_penalty(braces, outline_frac, hole_cx, hole_cy, hole_r, Lx, Ly, NS=14):
     """Penalizes any brace material that falls outside the traced body
     outline, or on/near the soundhole. This is enforced the same way for
@@ -2954,6 +3189,8 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
     def clip(v): return np.array([min(hi,max(lo,vv)) for vv,(lo,hi) in zip(v,bounds)])
     best_x, best_cost, best_result = x.copy(), 1e18, None
     cur_cost = 1e18
+    cur_hole_violation = None  # set on first iteration once braces exist
+    best_valid_x, best_valid_cost = None, 1e18
     n_modes = len(targets)
     for it in range(iters):
         if CANCEL_FLAG['stop']:
@@ -2962,6 +3199,21 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         step = np.array([(hi-lo) for lo,hi in bounds]) * (0.25*T + 0.02)
         cand = clip(x + np.random.normal(0,1,n)*step) if it>0 else x
         braces = encode_fn(cand, geo)
+        # No brace material may ever occupy the soundhole -- enforced as a
+        # ratchet, not a flat reject: a move is only rejected here if it
+        # would make hole intrusion WORSE than the currently accepted
+        # state, so a design that happens to start touching the hole (an
+        # unlikely but possible starting point) can still take
+        # intermediate steps to move clear, rather than being stuck
+        # unable to accept ANY move that still touches the hole even a
+        # little less than before. Once violation reaches zero, no
+        # accepted move can ever push it back above zero.
+        violation = brace_hole_violation(braces, geo['holeCx'], geo['holeCy'], geo['holeR'], geo['Lx'], geo['Ly'])
+        if cur_hole_violation is not None and violation > cur_hole_violation + 1e-12:
+            if it % max(1,iters//25) == 0 or it==iters-1:
+                progress_cb(label, it, iters, best_cost, best_result)
+                await asyncio.sleep(0)
+            continue
         result = evaluate_design(geo, braces, n_modes, meas_xy)
         for i,t in enumerate(targets):
             if result.get('ok') and result.get('measShapes') and i < len(result['measShapes']):
@@ -2969,19 +3221,24 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         cost = objective(result, targets, defl_limit_mm, mass_weight)
         accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
         if accept:
-            x, cur_cost = cand, cost
+            x, cur_cost, cur_hole_violation = cand, cost, violation
         if cost < best_cost:
             best_cost, best_x, best_result = cost, cand.copy(), result
+        if violation <= 1e-12 and cost < best_valid_cost:
+            best_valid_cost, best_valid_x = cost, cand.copy()
         if it % max(1,iters//25) == 0 or it==iters-1:
             progress_cb(label, it, iters, best_cost, best_result)
             await asyncio.sleep(0)
-    if best_result is None:
+    if best_valid_x is not None:
+        best_x, best_cost = best_valid_x, best_valid_cost
+        best_result = evaluate_design(geo, encode_fn(best_x, geo), n_modes, meas_xy)
+    elif best_result is None:
         best_result = evaluate_design(geo, encode_fn(best_x, geo), n_modes, meas_xy)
         best_cost = objective(best_result, targets, defl_limit_mm, mass_weight)
     return best_x, best_cost, best_result, encode_fn(best_x, geo)
 
 # ── Simulated annealing over a variable-length free brace topology ──────
-async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None):
+async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None, lock_positions=False):
     """Unconstrained search has no reason to ever land on a left-right
     symmetric layout by chance -- a symmetric configuration is a
     vanishingly small slice of the full search space, so pure random
@@ -3000,7 +3257,14 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     single global material, unchanged. A mirrored brace always gets the
     SAME material as its mirror partner, not an independent pick, since a
     real soundboard wouldn't have asymmetric material choice on an
-    otherwise-symmetric layout."""
+    otherwise-symmetric layout.
+
+    lock_positions, when True, restricts every mutation to cross-section
+    resizing only -- no adding, removing, repositioning, or bending any
+    brace, so the exact layout of a warm-started design (an uploaded
+    "Custom" design in particular) stays exactly where it was drawn.
+    Requires warm_braces; without an existing layout to lock, there's
+    nothing to hold in place."""
     half_cap = max(1, max_braces//2) if symmetric else max_braces
     fy_lo, fy_hi = (0.15, 0.47) if symmetric else (0.15, 0.85)
 
@@ -3031,12 +3295,22 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             mx,my = (x1+x2)/2, (y1+y2)/2
             dx,dy = x2-x1, y2-y1; L = math.hypot(dx,dy) or 1e-6
             nx_,ny_ = -dy/L, dx/L
-            bow = random.uniform(-0.15,0.15)
+            bow = random.uniform(-1,1) * min(0.15, L*0.45)
             b['type'] = 'curve'; b['cp'] = {'fx':clamp01(mx+nx_*bow), 'fy':clamp01(my+ny_*bow)}
         return b
     if warm_braces:
-        braces = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {}))
-                  for b in (warm_braces[::2] if symmetric else warm_braces)]
+        src = warm_braces[::2] if symmetric else warm_braces
+        # An uploaded/seed design may have more braces than this run's cap
+        # allows -- truncate up front rather than starting from a state
+        # that already violates it (the search could only ever remove
+        # braces to recover, never add, until it happened to drop below).
+        cap_now = half_cap if symmetric else max_braces
+        if len(src) > cap_now:
+            src = src[:cap_now]
+        braces = [dict(b, pts=[dict(pp) for pp in b['pts']],
+                       **({'cp':dict(b['cp'])} if b.get('cp') else {}),
+                       **({'cp2':dict(b['cp2'])} if b.get('cp2') else {}))
+                  for b in src]
         if materials:
             # Warm-started braces may come from a prior single-material run
             # (or a different material set) -- assign each a valid pick
@@ -3051,7 +3325,17 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         r = evaluate_design(geo, expand(bl), n_modes, meas_xy)
         return objective(r, targets, defl_limit_mm, mass_weight), r
     cur_cost, cur_result = evalb(braces)
+    cur_hole_violation = brace_hole_violation(expand(braces), geo['holeCx'], geo['holeCy'], geo['holeR'], geo['Lx'], geo['Ly'])
     best_braces, best_cost, best_result = [dict(b) for b in braces], cur_cost, cur_result
+    # Tracked separately from best_braces/best_cost above: the ratchet
+    # only guarantees violation never INCREASES, so an early low-cost
+    # candidate recorded while violation was still nonzero could otherwise
+    # end up as the returned "best" even after the search finds a fully
+    # clean design later with slightly higher cost. The real constraint is
+    # "never any material in the hole" on the actual returned result, not
+    # just "trending toward less violation" -- so the final return prefers
+    # this whenever one exists.
+    best_valid_braces, best_valid_cost = (None, 1e18) if cur_hole_violation > 1e-12 else (best_braces, best_cost)
     # Material-flip mutation gets its own slice of the move budget only
     # when a materials palette was actually given -- otherwise the move
     # probabilities below are unchanged from the single-material search.
@@ -3062,6 +3346,17 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         T = temp_scale*(0.995**it)
         cand = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {})) for b in braces]
         move = random.random()
+        if lock_positions and cur_hole_violation <= 1e-12:
+            # Skip straight to the resize branch every time -- pts, cp,
+            # and cp2 never get touched, so the layout can't drift from
+            # what was drawn, only its cross-section dimensions can. This
+            # only applies once the design is actually clear of the
+            # soundhole -- "locked" positions still aren't allowed to
+            # leave material sitting inside the hole, since that's a
+            # physical impossibility no setting should be able to
+            # override. If the seed starts with the hole violated,
+            # reposition/bend stay available below until it's resolved.
+            move = mat_move_cutoff + 0.60
         if materials and move < mat_move_cutoff and cand:
             # Flip one brace to a different material from the palette --
             # this is the actual mixed-material search: position/dimension
@@ -3091,29 +3386,70 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             b['heightTip'] = max(2.0, min(b['height'], hTip + random.uniform(-2.0,2.0)))
             b['widthTip'] = max(1.0, min(b['width'], wTip + random.uniform(-1.5,1.5)))
         elif cand:
-            # Bend or straighten this brace's centerline.
+            # Bend or straighten this brace's centerline. The bow cap is
+            # proportional to the brace's own chord length, not a fixed
+            # absolute value -- a short brace given the same absolute cap
+            # as a long one can end up with a bow bigger than its own
+            # length, which doesn't read as "curved," it self-intersects
+            # into a loop. (The exact same failure mode showed up in the
+            # falcate template's spine earlier in this project, for the
+            # same underlying reason.)
             b = cand[random.randrange(len(cand))]
             p0,p1 = b['pts'][0], b['pts'][1]
             mx,my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
             dx,dy = p1['fx']-p0['fx'], p1['fy']-p0['fy']; L = math.hypot(dx,dy) or 1e-6
             nx_,ny_ = -dy/L, dx/L
+            max_bow = min(0.2, L*0.45)
             cur_bow = 0.0
             if b.get('cp'):
                 cur_bow = (b['cp']['fx']-mx)*nx_ + (b['cp']['fy']-my)*ny_
-            new_bow = max(-0.2, min(0.2, cur_bow + random.uniform(-0.06,0.06)))
+            new_bow = max(-max_bow, min(max_bow, cur_bow + random.uniform(-0.06,0.06)))
             if abs(new_bow) < 0.01:
                 b['type'] = 'straight'; b.pop('cp', None)
             else:
                 b['type'] = 'curve'; b['cp'] = {'fx':clamp01(mx+nx_*new_bow), 'fy':clamp01(my+ny_*new_bow)}
+        # Safety net, independent of which move just ran: reposition can
+        # shrink a brace's chord without ever touching its cp, so a bow
+        # that was proportionate before can become disproportionate to
+        # the NEW, shorter chord and loop -- re-clamp every curved brace
+        # to its current chord every iteration, not just the one the bend
+        # mutation happened to touch this time.
+        for b in cand:
+            if not b.get('cp'):
+                continue
+            p0,p1 = b['pts'][0], b['pts'][1]
+            mx,my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
+            dx,dy = p1['fx']-p0['fx'], p1['fy']-p0['fy']; L = math.hypot(dx,dy) or 1e-6
+            nx_,ny_ = -dy/L, dx/L
+            bow = (b['cp']['fx']-mx)*nx_ + (b['cp']['fy']-my)*ny_
+            max_bow = min(0.2, L*0.45)
+            if abs(bow) > max_bow:
+                bow = max(-max_bow, min(max_bow, bow))
+                b['cp'] = {'fx':clamp01(mx+nx_*bow), 'fy':clamp01(my+ny_*bow)}
+        # No brace material may ever occupy the soundhole -- enforced as a
+        # ratchet, not a flat reject (see brace_hole_violation): a move is
+        # only rejected here if it would make hole intrusion WORSE than
+        # the currently accepted state, checked on the full (mirrored, if
+        # symmetric) layout since that's what actually gets built.
+        violation = brace_hole_violation(expand(cand), geo['holeCx'], geo['holeCy'], geo['holeR'], geo['Lx'], geo['Ly'])
+        if violation > cur_hole_violation + 1e-12:
+            if it % max(1,iters//25) == 0 or it==iters-1:
+                progress_cb(label, it, iters, best_cost, best_result)
+                await asyncio.sleep(0)
+            continue
         cost, result = evalb(cand)
         accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
         if accept:
-            braces, cur_cost, cur_result = cand, cost, result
+            braces, cur_cost, cur_result, cur_hole_violation = cand, cost, result, violation
         if cost < best_cost:
             best_cost, best_braces, best_result = cost, [dict(b) for b in cand], result
+        if violation <= 1e-12 and cost < best_valid_cost:
+            best_valid_cost, best_valid_braces = cost, [dict(b) for b in cand]
         if it % max(1,iters//25) == 0 or it==iters-1:
             progress_cb(label, it, iters, best_cost, best_result)
             await asyncio.sleep(0)
+    if best_valid_braces is not None:
+        return expand(best_valid_braces), best_valid_cost, evaluate_design(geo, expand(best_valid_braces), n_modes, meas_xy)
     return expand(best_braces), best_cost, best_result
 
 
@@ -3154,6 +3490,16 @@ async def run_all_patterns(payload_json):
             {'modulus': float(p.get('expMatSpruceE', 10e9)), 'density': float(p.get('expMatSpruceRho', 420.0))},
             {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0))},
         ]
+        # A design uploaded or picked from the current session, used ONLY
+        # by the "custom" pattern below -- it does not feed into or alter
+        # "novel" or "novelExperimental" in any way; those always start
+        # from a random layout exactly as before, regardless of whether a
+        # custom design is also selected. "custom" is a genuinely separate
+        # pattern so both can be compared side by side in the same run,
+        # rather than one silently changing the other's behavior.
+        seed_braces = p.get('seedBraces') or None
+        custom_symmetric = False  # always preserve the uploaded design's actual left-right structure; "lock brace positions" is the control that matters here now
+        custom_lock_positions = p.get('customLockPositions', False)
 
         results = {}   # key -> (braces, coarse_cost, coarse_x)
         if 'xbrace' in patterns and not CANCEL_FLAG['stop']:
@@ -3187,6 +3533,19 @@ async def run_all_patterns(payload_json):
                                                     max_braces_exp, iters_exp, _progress, 'novelExperimental',
                                                     symmetric=False, materials=exp_materials)
             results['novelExperimental'] = (braces, cost, None)
+        if 'custom' in patterns and seed_braces and not CANCEL_FLAG['stop']:
+            # Optimizes the actual uploaded/selected design -- its own
+            # brace count becomes the cap (rather than the Novel-pattern
+            # settings above, which have nothing to do with a design that
+            # didn't come from this search) so the result stays recognizably
+            # the same layout, just re-tuned, rather than being free to grow
+            # into something unrelated.
+            custom_cap = max(1, len(seed_braces) if not custom_symmetric else (len(seed_braces)+1)//2 * 2)
+            braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
+                                                    custom_cap, iters, _progress, 'custom',
+                                                    symmetric=custom_symmetric, warm_braces=seed_braces,
+                                                    lock_positions=custom_lock_positions)
+            results['custom'] = (braces, cost, None)
 
         # ── Polish each coarse winner at full resolution ──
         # The search grid above is deliberately coarse for speed, and a
@@ -3203,6 +3562,7 @@ async def run_all_patterns(payload_json):
         display_geo = dict(geo); display_geo['GN'] = p.get('displayGN', 150)
         n_modes = len(targets)
         polish_iters = max(40, min(200, iters//4))
+        polish_enabled = p.get('polishEnabled', True)
         ENCODERS = {
             'xbrace': (xbrace_encode, XBRACE_BOUNDS),
             'fan': (lambda pp, g: fan_encode(pp, fan_n, g), fan_bounds(fan_n)),
@@ -3213,14 +3573,30 @@ async def run_all_patterns(payload_json):
                 r = evaluate_design(hifi_geo, braces, n_modes, meas_xy)
                 final[key] = {'braces': braces, 'result': r}
                 continue
-            if key == 'novel' or key == 'novelExperimental':
-                sym = symmetric if key == 'novel' else False
-                cap = max_braces if key == 'novel' else max_braces_exp
-                this_polish_iters = polish_iters if key == 'novel' else int(polish_iters * exp_scale)
-                mats = exp_materials if key == 'novelExperimental' else None
+            if not polish_enabled:
+                # Skip straight to the coarse winner as-is, at hi-fi
+                # resolution, with no re-optimization pass -- the final
+                # display-resolution re-measurement below still runs
+                # regardless, since that's a separate, cheap one-off
+                # solve for reporting accuracy, not the (possibly slow)
+                # re-optimization this toggle actually controls.
+                polished_braces, polished_cost = braces, coarse_cost
+                r = evaluate_design(hifi_geo, braces, n_modes, meas_xy)
+            elif key == 'novel' or key == 'novelExperimental' or key == 'custom':
+                lockp = False
+                if key == 'novel':
+                    sym, cap, this_polish_iters, mats = symmetric, max_braces, polish_iters, None
+                elif key == 'novelExperimental':
+                    sym, cap, this_polish_iters, mats = False, max_braces_exp, int(polish_iters * exp_scale), exp_materials
+                else:  # custom
+                    sym = custom_symmetric
+                    cap = max(1, len(braces) if not sym else (len(braces)+1)//2 * 2)
+                    this_polish_iters, mats = polish_iters, None
+                    lockp = custom_lock_positions
                 polished_braces, polished_cost, r = await sa_free_topology(
                     hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
-                    this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15, materials=mats)
+                    this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
+                    materials=mats, lock_positions=lockp)
             else:
                 enc, bounds = ENCODERS[key]
                 # Warm-start the polish search from the coarse winner's own
