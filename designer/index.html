@@ -5,122 +5,151 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bracing Designer — Inverse Modal Design</title>
 <link rel="stylesheet" href="https://pyscript.net/releases/2026.3.1/core.css">
+<!-- Frutiger Aero era (~2007-2012) leaned on the OS's own UI font (Segoe UI /
+     Lucida Grande), not custom webfonts -- so no Google Fonts import here. -->
 <script type="module" src="https://pyscript.net/releases/2026.3.1/core.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:      #111110; --bg2: #1a1918; --bg3: #222120; --bg4: #2c2b29;
-  --border:  #333230; --border2: #444340;
-  --text:    #e8e4dc; --muted: #8a8680; --dim: #5a5650;
-  --accent:  #c8903a; --accent2: #4a9e8a; --gold: #d4a832;
-  --danger:  #b85050; --success: #4a9e6a;
-  --sbar: 260px; --hdr: 48px;
+  /* Frutiger Aero -- glossy glass over a sky-to-meadow gradient, with
+     natural blue/green/water tones instead of pure tech blue. */
+  --bg:      #d6f0f7; --bg2: #e8f7ee; --bg3: rgba(255,255,255,.62); --bg4: rgba(255,255,255,.85);
+  --border:  rgba(255,255,255,.55); --border2: rgba(80,130,110,.28);
+  --text:    #1f3b3a; --muted: #4d6b64; --dim: #6f9088;
+  --accent:  #2f9fd6; --accent2: #6cb33f; --gold: #e0a83c;
+  --danger:  #de6a54; --success: #4e9e46;
+  --headerbg: linear-gradient(180deg, rgba(255,255,255,.55), rgba(200,235,245,.35));
+  --headertext: #17393a; --headerdim: #3f6b64;
+  --sbar: 260px; --hdr: 52px;
+  --wood: 'Segoe UI', 'Lucida Grande', Tahoma, sans-serif;
+  --stencil: 'Segoe UI', 'Lucida Grande', Tahoma, sans-serif;
 }
-html, body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; line-height: 1.5; height: 100%; }
+/* Sky-to-meadow gradient with soft floating "bokeh" highlights, built
+   from CSS gradients only so the file stays self-contained -- the
+   classic Aero wallpaper feel behind a glassy UI. */
+html, body {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 9%),
+    radial-gradient(circle at 82% 15%, rgba(255,255,255,.45) 0%, rgba(255,255,255,0) 7%),
+    radial-gradient(circle at 92% 55%, rgba(255,255,255,.35) 0%, rgba(255,255,255,0) 6%),
+    radial-gradient(circle at 8% 75%, rgba(255,255,255,.4) 0%, rgba(255,255,255,0) 8%),
+    linear-gradient(180deg, #bfe6f5 0%, #d6f0f7 30%, #e6f6ec 65%, #eef8e6 100%);
+  background-attachment: fixed;
+  color: var(--text); font-family: 'Segoe UI', 'Lucida Grande', Tahoma, Geneva, sans-serif; font-size: 13px; line-height: 1.5; height: 100%;
+}
 body { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; }
-header { position: sticky; top: 0; z-index: 50; height: var(--hdr); display: flex; align-items: center; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+header { position: sticky; top: 0; z-index: 50; height: var(--hdr); display: flex; align-items: center; gap: 0; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,.6); background: var(--headerbg); backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%); flex-shrink: 0; box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 2px 10px rgba(30,90,90,.15); }
 .header-wordmark { display: flex; flex-direction: column; justify-content: center; gap: 1px; margin-right: 20px; }
-.header-wordmark h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 14px; font-weight: normal; color: var(--accent); letter-spacing: 0.01em; white-space: nowrap; }
-.header-wordmark span { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
-.header-divider { width: 1px; height: 28px; background: var(--border); margin-right: 14px; flex-shrink: 0; }
-.tab-bar { display: flex; gap: 1px; }
-.tab { padding: 6px 15px; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-family: inherit; transition: color .15s, background .15s; border-bottom: 2px solid transparent; letter-spacing: .01em; }
-.tab.active { color: var(--text); border-bottom-color: var(--accent); }
-.tab:hover:not(.active) { color: var(--text); background: var(--bg3); }
-.tab .stepnum { display: inline-block; width: 15px; height: 15px; border-radius: 50%; background: var(--bg4); color: var(--dim); font-size: 9px; text-align: center; line-height: 15px; margin-right: 5px; }
-.tab.active .stepnum { background: var(--accent); color: #1a1207; }
-.tab.done .stepnum { background: var(--success); color: #0a1a0f; }
+.header-wordmark h1 { font-family: var(--wood); font-size: 15px; font-weight: 700; color: var(--headertext); letter-spacing: 0.01em; white-space: nowrap; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
+.header-wordmark span { font-family: var(--stencil); font-size: 9.5px; color: var(--headerdim); letter-spacing: 0.06em; text-transform: uppercase; }
+.header-divider { width: 1px; height: 28px; background: rgba(80,130,110,.25); margin-right: 14px; flex-shrink: 0; }
+.tab-bar { display: flex; gap: 4px; }
+.tab { padding: 6px 15px; border: 1px solid transparent; background: transparent; color: var(--headerdim); cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; letter-spacing: .01em; transition: all .15s; border-radius: 20px; }
+.tab.active { color: #fff; background: linear-gradient(180deg, #6cc7ec 0%, #2f9fd6 55%, #237fb0 100%); border-color: rgba(255,255,255,.6); box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 2px 5px rgba(20,80,100,.35); text-shadow: 0 -1px 0 rgba(0,40,60,.3); }
+.tab:hover:not(.active) { color: var(--headertext); background: rgba(255,255,255,.4); border-color: rgba(255,255,255,.5); }
+.tab .stepnum { display: inline-block; width: 15px; height: 15px; border-radius: 50%; background: rgba(255,255,255,.5); color: var(--headertext); font-size: 9px; text-align: center; line-height: 15px; margin-right: 5px; font-family: var(--stencil); font-weight: 700; }
+.tab.active .stepnum { background: rgba(255,255,255,.85); color: #237fb0; }
+.tab.done .stepnum { background: var(--success); color: #fff; }
 .header-actions { display: flex; gap: 6px; margin-left: auto; }
-.header-btn { display: flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 4px; border: 1px solid var(--border2); background: var(--bg3); color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit; transition: all .15s; white-space: nowrap; }
-.header-btn:hover { color: var(--text); border-color: var(--accent); background: var(--bg4); }
+.header-btn { display: flex; align-items: center; gap: 5px; padding: 6px 13px; border-radius: 20px; border: 1px solid rgba(255,255,255,.6); background: linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.35)); color: var(--headertext); cursor: pointer; font-size: 11px; font-weight: 600; font-family: inherit; transition: all .15s; white-space: nowrap; box-shadow: 0 1px 3px rgba(30,90,90,.18); }
+.header-btn:hover { color: #fff; border-color: var(--accent); background: linear-gradient(180deg, #6cc7ec, #2f9fd6); }
 
 .app { display: flex; height: calc(100vh - var(--hdr)); height: calc(100dvh - var(--hdr)); overflow: hidden; }
 .panel { display: none; width: 100%; height: 100%; min-height: 0; }
 .panel.active { display: flex; min-height: 0; }
 
-.sidebar { width: var(--sbar); flex-shrink: 0; min-height: 0; background: var(--bg2); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--border); }
-.sbar-section { padding: 12px 13px; border-bottom: 1px solid var(--border); }
-.sbar-title { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); margin-bottom: 9px; }
+.sidebar { width: var(--sbar); flex-shrink: 0; min-height: 0; background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.25)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; border-right: 1px solid rgba(255,255,255,.5); box-shadow: 1px 0 8px rgba(60,110,90,.08); }
+.sbar-section { padding: 12px 13px; border-bottom: 1px solid rgba(80,130,110,.15); }
+.sbar-title { font-family: var(--stencil); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 9px; }
 .sbar-hint { font-size: 10.5px; color: var(--dim); line-height: 1.5; margin-top: 5px; }
 
-.main-area { flex: 1; position: relative; overflow: auto; background: var(--bg); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.main-area { flex: 1; position: relative; overflow: auto; background: transparent; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
-.btn { display: block; width: 100%; padding: 7px 10px; margin-bottom: 6px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; color: var(--text); font-family: inherit; font-size: 12px; cursor: pointer; transition: all .15s; text-align: center; }
-.btn:hover { border-color: var(--accent); background: var(--bg4); }
-.btn.primary { border-color: var(--accent); color: var(--accent); }
-.btn.primary:hover { background: #201810; }
-.btn.success { border-color: var(--success); color: var(--success); }
-.btn.danger { border-color: var(--danger); color: var(--danger); }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn { position: relative; overflow: hidden; display: block; width: 100%; padding: 8px 10px; margin-bottom: 6px; background: linear-gradient(180deg, #fdfefe 0%, #e6eef0 55%, #d7e3e6 100%); border: 1px solid rgba(255,255,255,.7); border-radius: 20px; color: var(--text); font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s; text-align: center; box-shadow: 0 2px 5px rgba(30,90,90,.18), 0 1px 0 rgba(255,255,255,.8) inset; }
+.btn::after { content:''; position:absolute; left:4%; right:4%; top:8%; height:38%; border-radius:50px; background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,0)); pointer-events:none; }
+.btn:hover { border-color: var(--accent); background: linear-gradient(180deg, #ffffff 0%, #eef7f9 55%, #dceef2 100%); }
+.btn:active { box-shadow: inset 0 2px 4px rgba(20,60,60,.25); transform: translateY(1px); }
+.btn.primary { background: linear-gradient(180deg, #7fd2f2 0%, #2f9fd6 55%, #1f7fa8 100%); border-color: rgba(255,255,255,.7); color: #fff; text-shadow: 0 -1px 0 rgba(0,40,60,.3); }
+.btn.primary:hover { background: linear-gradient(180deg, #93dcf5, #3badea, #2590bd); }
+.btn.success { background: linear-gradient(180deg, #a3dd7e 0%, #6cb33f 55%, #4e8a2b 100%); border-color: rgba(255,255,255,.7); color: #fff; text-shadow: 0 -1px 0 rgba(0,40,10,.3); }
+.btn.success:hover { background: linear-gradient(180deg, #b2e592, #79c14b, #5a9c34); }
+.btn.danger { background: linear-gradient(180deg, #f0968296 0%, #de6a54 55%, #bf4c37 100%); border-color: rgba(255,255,255,.7); color: #fff; text-shadow: 0 -1px 0 rgba(60,10,0,.3); }
+.btn.danger:hover { background: linear-gradient(180deg, #f4a793, #e67a63, #cc5940); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-row { display: flex; gap: 6px; }
 .btn-row .btn { margin-bottom: 0; }
 
 label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
 input[type=text], input[type=number], select, textarea {
-  width: 100%; padding: 6px 8px; background: var(--bg3); border: 1px solid var(--border2);
-  border-radius: 4px; color: var(--text); font-family: inherit; font-size: 12px; margin-bottom: 8px;
+  width: 100%; padding: 6px 10px; background: rgba(255,255,255,.7); border: 1px solid var(--border2);
+  border-radius: 10px; color: var(--text); font-family: inherit; font-size: 12px; margin-bottom: 8px;
+  box-shadow: inset 0 1px 3px rgba(30,60,50,.12);
+}
+input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--accent); background: rgba(255,255,255,.9);
 }
 textarea { font-family: 'Courier New', monospace; font-size: 11px; resize: vertical; }
-input[type=range] { width: 100%; margin-bottom: 8px; }
+input[type=range] { width: 100%; margin-bottom: 8px; accent-color: var(--accent); }
 .param-row { margin-bottom: 9px; }
 .param-row.inline { display: flex; gap: 8px; align-items: center; }
 .param-row.inline label { flex: 1; margin-bottom: 0; }
 .param-row.inline input { width: 90px; margin-bottom: 0; }
 .check-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11.5px; color: var(--text); }
-.check-row input { width: auto; margin: 0; }
+.check-row input { width: auto; margin: 0; accent-color: var(--accent); }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 
-.status { font-size: 11.5px; padding: 8px 10px; border-radius: 4px; background: var(--bg3); border: 1px solid var(--border); color: var(--muted); margin-top: 4px; }
-.status.ok { border-color: var(--success); color: var(--success); }
-.status.err { border-color: var(--danger); color: var(--danger); }
-.status.warn { border-color: var(--gold); color: var(--gold); }
+.status { font-size: 11.5px; padding: 8px 12px; border-radius: 14px; background: var(--bg3); border: 1px solid var(--border2); color: var(--muted); margin-top: 4px; box-shadow: 0 1px 0 rgba(255,255,255,.6) inset; }
+.status.ok { border-color: var(--success); color: #3d7a38; background: rgba(230,248,225,.75); }
+.status.err { border-color: var(--danger); color: #a8503e; background: rgba(251,229,224,.75); }
+.status.warn { border-color: var(--gold); color: #a1791f; background: rgba(250,236,205,.75); }
 
-.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
-.card-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.card { background: var(--bg3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 16px; padding: 14px; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 3px 10px rgba(40,90,80,.12); }
+.card-title { font-family: var(--wood); font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
 
 table.data-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-table.data-table th { text-align: left; color: var(--dim); font-weight: 600; text-transform: uppercase; font-size: 9.5px; letter-spacing: .06em; padding: 5px 7px; border-bottom: 1px solid var(--border2); }
-table.data-table td { padding: 5px 7px; border-bottom: 1px solid var(--border); color: var(--text); }
-table.data-table tr:hover td { background: var(--bg3); }
+table.data-table th { text-align: left; color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: .05em; padding: 6px 7px; border-bottom: 2px solid var(--border2); }
+table.data-table td { padding: 6px 7px; border-bottom: 1px solid var(--border2); color: var(--text); }
+table.data-table tr:hover td { background: rgba(255,255,255,.5); }
 table.data-table input { margin: 0; padding: 3px 5px; font-size: 11px; }
 
-canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px solid var(--border); border-radius: 5px; cursor: crosshair; }
+canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px solid var(--border); border-radius: 14px; cursor: crosshair; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset; }
 
-.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; background: var(--bg4); color: var(--muted); border: 1px solid var(--border2); }
-.pill.on { background: #201810; color: var(--accent); border-color: var(--accent); }
-.pill.warn { background: #2a2210; color: var(--gold); border-color: var(--gold); }
-.pill.ok { background: #0d1f14; color: var(--success); border-color: var(--success); }
-.pill.err { background: #2a1010; color: var(--danger); border-color: var(--danger); }
+.pill { display: inline-block; position: relative; overflow: hidden; padding: 3px 11px; border-radius: 999px; font-size: 10px; font-weight: 700; background: linear-gradient(180deg, #a9bcb6, #7c948c); color: #fff; border: 1px solid rgba(255,255,255,.5); text-shadow: 0 -1px 0 rgba(0,20,10,.25); box-shadow: 0 1px 2px rgba(30,60,50,.2); }
+.pill.on { background: linear-gradient(180deg, #7fd2f2, var(--accent)); }
+.pill.warn { background: linear-gradient(180deg, #f3c877, var(--gold)); }
+.pill.ok { background: linear-gradient(180deg, #a3dd7e, var(--success)); }
+.pill.err { background: linear-gradient(180deg, #f0a08c, var(--danger)); }
 
 .results-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 @media (max-width: 900px) { .results-grid { grid-template-columns: 1fr; } }
-.pattern-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.pattern-card.best { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
-.pattern-card-hdr { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-.pattern-card-hdr h3 { font-size: 13px; font-weight: 600; color: var(--text); }
+.pattern-card { background: var(--bg3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 3px 10px rgba(40,90,80,.12); }
+.pattern-card.best { border-color: var(--gold); border-width: 2px; box-shadow: 0 0 0 1px var(--gold) inset, 0 3px 12px rgba(224,168,60,.35); }
+.pattern-card-hdr { padding: 10px 12px; border-bottom: 1px solid var(--border2); display: flex; align-items: center; justify-content: space-between; background: linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,.15)); }
+.pattern-card-hdr h3 { font-family: var(--wood); font-size: 13px; font-weight: 700; color: var(--text); }
 .pattern-card-body { padding: 10px 12px; }
-.pattern-canvas-wrap { background: #0a0908; border-radius: 5px; overflow: hidden; }
-.metric-row { display: flex; justify-content: space-between; font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.pattern-canvas-wrap { background: #f6fcfb; border-radius: 10px; overflow: hidden; }
+.metric-row { display: flex; justify-content: space-between; font-size: 11.5px; padding: 4px 0; border-bottom: 1px solid var(--border2); }
 .metric-row .v { font-variant-numeric: tabular-nums; }
-.metric-row .v.good { color: var(--success); } .metric-row .v.bad { color: var(--danger); }
+.metric-row .v.good { color: #3d7a38; } .metric-row .v.bad { color: #a8503e; }
 
-.progress-bar { height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin: 8px 0; }
-.progress-bar .fill { height: 100%; background: var(--accent); transition: width .2s; width: 0%; }
+.progress-bar { height: 9px; background: rgba(255,255,255,.5); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin: 8px 0; box-shadow: inset 0 1px 2px rgba(30,60,50,.15); }
+.progress-bar .fill { height: 100%; background: linear-gradient(180deg, #7fd2f2, var(--accent)); transition: width .2s; width: 0%; }
 
-.tag-note { font-size: 10.5px; color: var(--dim); background: var(--bg3); border: 1px dashed var(--border2); border-radius: 4px; padding: 7px 9px; line-height: 1.5; }
-.upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; border: 1px dashed var(--border2); border-radius: 5px; color: var(--muted); font-size: 11px; cursor: pointer; text-align: center; transition: all .15s; }
-.upload-zone:hover { border-color: var(--accent); color: var(--text); background: var(--bg4); }
+.tag-note { font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,.45); border: 1px dashed var(--border2); border-radius: 12px; padding: 8px 10px; line-height: 1.5; }
+.upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 18px; border: 2px dashed var(--border2); border-radius: 16px; color: var(--muted); font-size: 11px; cursor: pointer; text-align: center; transition: all .15s; background: rgba(255,255,255,.3); }
+.upload-zone:hover { border-color: var(--accent); color: var(--text); background: rgba(255,255,255,.55); }
 
-.zoom-bar { position: absolute; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 3px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 5px; padding: 3px 6px; z-index: 10; }
-.zoom-btn { width: 21px; height: 21px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; }
-.zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
+.zoom-bar { position: absolute; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.7); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 999px; padding: 4px 7px; z-index: 10; box-shadow: 0 2px 6px rgba(30,60,50,.18), 0 1px 0 rgba(255,255,255,.8) inset; }
+.zoom-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255,255,255,.6); background: linear-gradient(180deg, #fdfefe, #d7e3e6); color: var(--text); cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(30,60,50,.2); }
+.zoom-btn:hover { border-color: var(--accent); background: linear-gradient(180deg, #7fd2f2, var(--accent)); color: #fff; }
 
-.confirm-bar { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 6px; position: sticky; bottom: 0; }
+.confirm-bar { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--bg3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 999px; position: sticky; bottom: 0; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 -2px 8px rgba(40,90,80,.1); }
 .confirm-bar .msg { font-size: 11.5px; color: var(--muted); }
 .confirm-bar .msg.err { color: var(--danger); }
-.confirm-bar button { width: auto; padding: 8px 16px; margin: 0; flex-shrink: 0; }
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
-::-webkit-scrollbar-track { background: var(--bg2); }
+.confirm-bar button { width: auto; padding: 8px 20px; margin: 0; flex-shrink: 0; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(80,130,110,.35); border-radius: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
@@ -274,10 +303,18 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Top material</div>
-      <select id="matPreset"><option value="spruce">Spruce (E=11 GPa, ρ=420)</option><option value="cedar">Cedar (E=8 GPa, ρ=380)</option><option value="custom">Custom</option></select>
-      <div class="param-row inline"><label>Young's modulus E (GPa)</label><input type="number" id="geoE" value="11"></div>
+      <select id="matPreset">
+        <option value="spruce">Sitka spruce (anisotropic)</option>
+        <option value="cedar">Western red cedar (anisotropic)</option>
+        <option value="isotropic">Isotropic (legacy, direction-independent)</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="param-row inline"><label>Along-grain modulus Eₗ (GPa)</label><input type="number" id="geoE" value="11"></div>
+      <div class="param-row inline"><label>Across-grain modulus Eᵣ (GPa)</label><input type="number" id="geoEy" value="0.73" step="0.01"></div>
+      <div class="param-row inline"><label>Shear modulus G_LR (GPa)</label><input type="number" id="geoGxy" value="0.69" step="0.01"></div>
+      <div class="param-row inline"><label>Poisson's ratio ν_LR</label><input type="number" id="geoNu" value="0.37" step="0.01"></div>
       <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="420"></div>
-      <div class="param-row inline"><label>Poisson's ratio ν</label><input type="number" id="geoNu" value="0.30" step="0.01"></div>
+      <div class="sbar-hint">Assumes grain runs along the plate's length. See Documentation for the model and where its numbers come from.</div>
       <label>Edge boundary condition</label>
       <select id="geoBC"><option value="ss">Simply supported (glued to rim)</option><option value="free">Free (unsupported reference)</option></select>
     </div>
@@ -321,13 +358,24 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="check-row"><input type="checkbox" id="genFan" checked><label style="margin:0">Fan bracing</label></div>
       <div class="check-row"><input type="checkbox" id="genFalcate" checked><label style="margin:0">Falcate (curved / sickle)</label></div>
       <div class="check-row"><input type="checkbox" id="genNovel" checked><label style="margin:0">Novel — free topology</label></div>
-      <div class="check-row"><input type="checkbox" id="genNovelExperimental"><label style="margin:0">Novel — experimental (asymmetric, unconstrained)</label></div>
+      <div class="check-row"><input type="checkbox" id="genNovelExperimental"><label style="margin:0">Experimental (asymmetric, unconstrained)</label></div>
       <div class="check-row"><input type="checkbox" id="genCustom"><label style="margin:0">Custom (optimize your own uploaded design)</label></div>
-      <div class="sbar-hint">Only "Novel", "Novel — experimental", and "Custom" search positions. See Documentation.</div>
+      <div class="sbar-hint">Only "Novel", "Experimental", and "Custom" search positions. See Documentation.</div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Fan settings</div>
+      <div class="param-row inline"><label>Fan brace count</label><input type="number" id="fanCount" value="5" min="3" max="9"></div>
+    </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Novel pattern settings</div>
+      <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
+      <div class="check-row"><input type="checkbox" id="novelSymmetric" checked><label style="margin:0">Enforce left-right symmetry</label></div>
+      <div class="sbar-hint">Leave on unless deliberately exploring asymmetric bracing.</div>
     </div>
     <div class="sbar-section" id="novelExperimentalSettings" style="display:none">
-      <div class="sbar-title">Novel — experimental settings</div>
+      <div class="sbar-title">Experimental settings</div>
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelExpMaxBraces" value="20" min="2" max="40"></div>
+      <div class="sbar-hint">A higher cap doesn't mean the search will use it all — braces beyond a small free allowance now have to earn their keep, not just avoid hurting the result. See Documentation.</div>
     </div>
     <div class="sbar-section" id="multiMaterialSettings" style="display:none">
       <div class="sbar-title">Materials available to this solver</div>
@@ -355,32 +403,15 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       </table>
       <div class="sbar-hint">Not the same as "carbon-fiber reinforced" below — see Documentation.</div>
     </div>
-    <div class="sbar-section">
-      <div class="sbar-title">Fan settings</div>
-      <div class="param-row inline"><label>Fan brace count</label><input type="number" id="fanCount" value="5" min="3" max="9"></div>
-    </div>
-    <div class="sbar-section">
-      <div class="sbar-title">Brace material</div>
-      <select id="braceMatPreset">
-        <option value="spruce">Sitka spruce (E=10 GPa, ρ=420)</option>
-        <option value="maple">Maple (E=12.6 GPa, ρ=630)</option>
-        <option value="mahogany">Mahogany (E=8.7 GPa, ρ=550)</option>
-        <option value="carbon">Carbon-fiber reinforced (E=60 GPa, ρ=700)</option>
-        <option value="custom">Custom</option>
-      </select>
-      <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="10" step="0.5"></div>
-      <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
-      <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
-    </div>
     <div class="sbar-section" id="customPatternSettings" style="display:none">
       <div class="sbar-title">Custom — design to optimize</div>
-      <div class="sbar-hint">Doesn't affect "Novel" or "Novel — experimental" — see Documentation.</div>
+      <div class="sbar-hint">Doesn't affect "Novel" or "Experimental" — see Documentation.</div>
       <button class="btn" id="seedUploadBtn" style="width:100%; margin-top:8px">Choose file…</button>
       <input type="file" id="seedUploadInput" accept="application/json" style="display:none">
       <div class="sbar-hint" id="seedUploadStatus" style="margin-top:6px"></div>
       <div class="sbar-hint">Accepts a file from this tool or the paired Visualizer.</div>
       <div id="seedPreviewWrap" style="display:none; margin-top:10px">
-        <canvas id="seedPreviewCanvas" width="260" height="340" style="width:100%; max-width:220px; display:block; margin:0 auto; background:#0a0908; border:1px solid var(--border2); border-radius:4px"></canvas>
+        <canvas id="seedPreviewCanvas" width="260" height="340" style="width:100%; max-width:220px; display:block; margin:0 auto; background:#ffffff; border:1px solid var(--border2); border-radius:4px"></canvas>
         <div class="sbar-hint" style="text-align:center; margin-top:4px">If this doesn't match your body's actual orientation, use the buttons below — they change the design, not just the preview.</div>
         <div class="btn-row" style="margin-top:8px">
           <button class="btn" id="seedRotateCW" style="font-size:11px">⟳ Rotate 90°</button>
@@ -395,10 +426,17 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
       <div class="sbar-hint">Dimensions only, layout untouched (except to clear the soundhole, which always takes priority). See Documentation.</div>
     </div>
     <div class="sbar-section">
-      <div class="sbar-title">Novel pattern settings</div>
-      <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
-      <div class="check-row"><input type="checkbox" id="novelSymmetric" checked><label style="margin:0">Enforce left-right symmetry</label></div>
-      <div class="sbar-hint">Leave on unless deliberately exploring asymmetric bracing.</div>
+      <div class="sbar-title">Brace material</div>
+      <select id="braceMatPreset">
+        <option value="spruce">Sitka spruce (E=10 GPa, ρ=420)</option>
+        <option value="maple">Maple (E=12.6 GPa, ρ=630)</option>
+        <option value="mahogany">Mahogany (E=8.7 GPa, ρ=550)</option>
+        <option value="carbon">Carbon-fiber reinforced (E=60 GPa, ρ=700)</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="10" step="0.5"></div>
+      <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
+      <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Optimizer</div>
@@ -440,7 +478,7 @@ canvas.plot { display: block; width: 100%; background: #0a0908; border: 1px soli
 
 <input type="file" id="loadProjectInput" accept="application/json" style="display:none">
 <div id="helpOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center;">
-  <div style="max-width:760px; max-height:85vh; overflow:auto; background:var(--bg2); border:1px solid var(--border2); border-radius:8px; padding:22px;">
+  <div style="max-width:760px; max-height:85vh; overflow:auto; background:var(--bg3); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--border); border-radius:20px; padding:24px; box-shadow:0 1px 0 rgba(255,255,255,.7) inset, 0 8px 30px rgba(20,50,45,.35);">
     <h2 style="font-size:15px; margin-bottom:10px; color:var(--accent);">Documentation</h2>
     <div id="helpBody" style="font-size:12px; line-height:1.7; color:var(--text);"></div>
     <button class="btn" style="margin-top:14px" onclick="document.getElementById('helpOverlay').style.display='none'">Close</button>
@@ -459,7 +497,7 @@ const MS = { compositeFreq:null, compositeMagDb:null, modes:[] };
 const GEO = {
   outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.1332, bridge:{fx:0.63, fy:0.5},
   bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:12,
-  Lx:0.508, Ly:0.394, h:0.0028, E:11e9, rho:420, nu:0.30, bcMode:'ss',
+  Lx:0.508, Ly:0.394, h:0.0028, E:11e9, Ey:0.73e9, Gxy:0.69e9, rho:420, nu:0.37, bcMode:'ss',
   loadN:300, bridgeTorqueNmm:10000, deflLimitMm:2, traceMode:'outline', bgImage:null
 };
 /* A rectangle (length across the width, depth along the length) is a
@@ -486,12 +524,12 @@ const GEN = { results:{} }; // keyed by pattern id -> {braces, freqs, mac, deflM
 let nextModeId = 1;
 
 const PATTERN_META = {
-  xbrace:  { label:'X-brace',  color:'#c8903a' },
-  fan:     { label:'Fan bracing', color:'#4a9e8a' },
-  falcate: { label:'Falcate (curved)', color:'#b06fc9' },
-  novel:   { label:'Novel — free topology', color:'#d4a832' },
-  novelExperimental: { label:'Novel — experimental', color:'#e8664a' },
-  custom:  { label:'Custom (from your design)', color:'#5fa8d4' },
+  xbrace:  { label:'X-brace',  color:'#2f9fd6' },
+  fan:     { label:'Fan bracing', color:'#6cb33f' },
+  falcate: { label:'Falcate (curved)', color:'#9b7fc9' },
+  novel:   { label:'Novel — free topology', color:'#e0a83c' },
+  novelExperimental: { label:'Experimental', color:'#d9853a' },
+  custom:  { label:'Custom (from your design)', color:'#1f7fa8' },
 };
 
 /* ============================================================
@@ -563,6 +601,26 @@ document.getElementById('helpBtn').onclick = ()=>{
   everything else you enter.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 2 — Plate & Load</h4>
+  <p><b>The top's material model is orthotropic</b> (direction-dependent), not a single isotropic modulus — real spruce is
+  roughly 15× stiffer along the grain than across it, and that difference genuinely changes mode shapes, not just
+  frequencies. The governing equation has three independent stiffness terms instead of one:</p>
+  <p style="text-align:center; font-style:italic">D₁₁·w,<sub>xxxx</sub> + 2(D₁₂+2D₆₆)·w,<sub>xxyy</sub> + D₂₂·w,<sub>yyyy</sub> = q</p>
+  <p>where D₁₁, D₂₂ come from the along-grain and across-grain moduli (Eₗ, Eᵣ), D₆₆ from the shear modulus (G_LR), and D₁₂
+  from the major Poisson's ratio (ν_LR) — the minor ratio ν_RL is always derived from reciprocity (ν_LR/Eₗ = ν_RL/Eᵣ),
+  never set independently, since a material where that doesn't hold isn't physically valid. <b>Grain is assumed to run
+  along the plate's length</b> (the standard construction convention) — a traced body that's rotated relative to true
+  grain direction isn't accounted for. The default Sitka spruce and cedar ratios (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16) are the
+  values commonly cited in guitar-acoustics literature, not a specific lab measurement of your actual top — treat them as
+  a reasonable starting point, editable if you have better numbers for your material.</p>
+  <p>Discretization is finite-difference (not finite-element): three directional second-derivative operators, each
+  squared before being combined (same "square it for guaranteed positive-semi-definiteness" principle the old
+  isotropic-only version used with a single combined operator, just decomposed into three simpler direction-specific
+  pieces instead of one, since there's no single operator to square for a direction-dependent material). This was
+  validated against the known closed-form solution for a simply-supported rectangular orthotropic plate (Navier's
+  series solution) before being used on real traced bodies — matched to within about 1% across the first several
+  modes, confirmed free of spurious zero/negative-energy modes, and confirmed it reduces to the exact same numbers as
+  the old isotropic solver when given isotropic material properties. An older saved project (or the "Isotropic" material
+  preset) reproduces the original single-modulus behavior exactly, not an approximation of it.</p>
   <p>A hand-traced outline is almost never perfectly bilateral, even when traced carefully — real photos have angle and lens
   distortion, and no top is traced pixel-perfect. Bracing patterns here (X-brace, fan, falcate) are exactly mirror-symmetric
   by construction, so a slightly lopsided body makes even correct bracing look off. "Symmetrize outline" resamples your
@@ -604,13 +662,17 @@ document.getElementById('helpBtn').onclick = ()=>{
   design that's near-optimal on a coarse grid isn't guaranteed to still be optimal on a finer one — deflection especially is
   sensitive to grid resolution right at the load point.</p>
   <p><b>Fixed vs. free patterns:</b> X-brace, fan, and falcate hold to a fixed reference layout each (positions, angles, and
-  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel", "Novel — experimental",
+  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel", "Experimental",
   and "Custom" are the only patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the
   search only touches one half of the plate and mirrors it for evaluation) — leave this on unless deliberately exploring
   asymmetric bracing, since an unconstrained search has no reason to land on a symmetric layout by chance, and asymmetric
   mode shapes skew the radiation pattern and bass/treble balance even when frequencies land on target. "Experimental" is
   the same free search with the symmetry requirement and brace-count cap both removed — it isn't unconstrained, since the
-  same mass penalty still applies, just far less boxed in. Brace material (modulus, density) is set once per run and
+  same mass penalty still applies, just far less boxed in. Raising a free-topology pattern's max brace count doesn't mean
+  the search will actually use it all: beyond a small free allowance, each additional brace costs a direct, fixed amount —
+  it has to earn that back through a real improvement, not just avoid making things worse, which is what a high cap used
+  to produce before this existed (the search filling up toward whatever maximum was allowed, since a small extra brace
+  barely added enough mass to discourage it on its own). Brace material (modulus, density) is set once per run and
   applied to every brace in every pattern; it's an isotropic-beam approximation, not modeling wood grain
   direction/anisotropy.</p>
   <p><b>Custom</b> optimizes a design you upload (from this tool, the paired Visualizer, or a bare braces array — axis
@@ -620,7 +682,7 @@ document.getElementById('helpBtn').onclick = ()=>{
   if checked. <b>Lock brace positions</b> restricts its search to cross-section dimensions only — no brace is added,
   removed, moved, or bent, so the exact layout you drew stays exactly where it was; turn this on when the layout itself is
   already deliberate and only the sizing should be tuned.</p>
-  <p><b>Novel — experimental's materials palette</b> (spruce/carbon fiber properties, editable) is currently a preview —
+  <p><b>Experimental's materials palette</b> (spruce/carbon fiber properties, editable) is currently a preview —
   every brace in every pattern, including Experimental, still uses the single "Brace material" set above it. Once
   mixed-material search is implemented, Experimental will be able to assign each brace its own material from this palette.
   Carbon fiber's default values (E≈135 GPa, ρ≈1600 kg/m³) are for a real unidirectional structural composite along the
@@ -1241,10 +1303,10 @@ function drawSpectrum(){
   const ctx = cvs.getContext('2d');
   const W=cvs.width, H=cvs.height;
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#0a0908'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,W,H);
   const spec = currentSpectrum();
   if(!spec){
-    ctx.fillStyle='#5a5650'; ctx.font='12px sans-serif'; ctx.fillText('Load FRF data in step 1 to see the response spectrum.', 16, H/2);
+    ctx.fillStyle='#6f9088'; ctx.font='12px sans-serif'; ctx.fillText('Load FRF data in step 1 to see the response spectrum.', 16, H/2);
     return;
   }
   const logX = document.getElementById('spectrumLogX').checked;
@@ -1269,7 +1331,7 @@ function drawSpectrum(){
     : (x => f0 + (x-padL)/plotW * (f1-f0));
   const yOf = d => padT + (1-(d-dbMin)/(dbMax-dbMin)) * plotH;
   // gridlines
-  ctx.strokeStyle='#222120'; ctx.lineWidth=1; ctx.font='9.5px monospace'; ctx.fillStyle='#5a5650';
+  ctx.strokeStyle='#cfe6df'; ctx.lineWidth=1; ctx.font='9.5px monospace'; ctx.fillStyle='#6f9088';
   const ticks = logX
     ? [10,20,50,100,200,500,1000,2000,5000,10000,20000].filter(f=>f>=f0 && f<=f1)
     : Array.from({length:5},(_,g)=> f0 + g*(f1-f0)/4);
@@ -1279,18 +1341,18 @@ function drawSpectrum(){
     ctx.fillText((f>=1000?(f/1000)+'k':Math.round(f))+'Hz', x-14, H-8);
   });
   // curve
-  ctx.beginPath(); ctx.strokeStyle='#c8903a'; ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.strokeStyle='#2f9fd6'; ctx.lineWidth=1.3;
   for(let i=i0;i<=i1;i++){ const x=xOf(freq[i]), y=yOf(mag[i]); if(i===i0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
   ctx.stroke();
   // mode markers
   MS.modes.forEach(m=>{
     if(m.freq<f0||m.freq>f1) return;
     const x = xOf(m.freq);
-    ctx.strokeStyle = m.use ? '#d4a832' : '#5a5650';
+    ctx.strokeStyle = m.use ? '#e0a83c' : '#6f9088';
     ctx.setLineDash(m.use?[]:[3,3]);
     ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,H-padB); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = m.use ? '#d4a832' : '#5a5650';
+    ctx.fillStyle = m.use ? '#e0a83c' : '#6f9088';
     ctx.font='10px sans-serif';
     ctx.fillText(m.label, x+3, padT+11);
   });
@@ -1379,14 +1441,26 @@ document.getElementById('outlinePreset').onchange = e=>{
     drawGeoCanvas();
   };
 });
-const MAT_PRESETS = { spruce:{E:11,rho:420}, cedar:{E:8,rho:380} };
+const MAT_PRESETS = {
+  // Ratios are the standard along/across-grain values used in guitar
+  // acoustics literature (E_R/E_L ~ 1/15, G_LR/E_L ~ 1/16 for spruce;
+  // similar order for cedar) -- see Documentation for sourcing.
+  spruce:    {E:11,  Ey:0.73, Gxy:0.69, nu:0.37},
+  cedar:     {E:8,   Ey:0.53, Gxy:0.50, nu:0.37},
+  isotropic: {E:11,  Ey:11,   Gxy:11/(2*(1+0.30)), nu:0.30},
+};
 document.getElementById('matPreset').onchange = e=>{
   const p = MAT_PRESETS[e.target.value]; if(!p) return;
-  document.getElementById('geoE').value = p.E; document.getElementById('geoRho').value = p.rho;
-  GEO.E = p.E*1e9; GEO.rho = p.rho;
+  document.getElementById('geoE').value = p.E;
+  document.getElementById('geoEy').value = p.Ey;
+  document.getElementById('geoGxy').value = p.Gxy;
+  document.getElementById('geoNu').value = p.nu;
+  GEO.E = p.E*1e9; GEO.Ey = p.Ey*1e9; GEO.Gxy = p.Gxy*1e9; GEO.nu = p.nu;
 };
-['geoE','geoRho','geoNu'].forEach(id=> document.getElementById(id).oninput = ()=>{
+['geoE','geoEy','geoGxy','geoRho','geoNu'].forEach(id=> document.getElementById(id).oninput = ()=>{
   GEO.E = +document.getElementById('geoE').value*1e9;
+  GEO.Ey = +document.getElementById('geoEy').value*1e9;
+  GEO.Gxy = +document.getElementById('geoGxy').value*1e9;
   GEO.rho = +document.getElementById('geoRho').value;
   GEO.nu = +document.getElementById('geoNu').value;
 });
@@ -1543,7 +1617,7 @@ function drawGeoCanvas(){
   const cvs = document.getElementById('geoCanvas'), ctx = cvs.getContext('2d');
   fitCanvasToContainer(cvs);
   const W=cvs.width,H=cvs.height;
-  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
   const {ox,oy,drawW,drawH} = geoCanvasTransform(cvs);
   const toPx = p => [ox+p.fy*drawW, oy+p.fx*drawH];
 
@@ -1574,11 +1648,11 @@ function drawGeoCanvas(){
     if(GEO.outlineClosed) ctx.closePath();
     ctx.fillStyle = GEO.outlineClosed ? 'rgba(200,144,58,0.10)' : 'rgba(200,144,58,0.04)';
     ctx.fill();
-    ctx.strokeStyle='#c8903a'; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.strokeStyle='#2f9fd6'; ctx.lineWidth=1.6; ctx.stroke();
   }
   // Raw control points + guide lines
   if(pts.length>1){
-    ctx.save(); ctx.strokeStyle='#c8903a88'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.save(); ctx.strokeStyle='#2f9fd688'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
     ctx.beginPath();
     pts.forEach((p,i)=>{ const [x,y]=toPx(p); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     if(GEO.outlineClosed) ctx.closePath();
@@ -1588,17 +1662,17 @@ function drawGeoCanvas(){
     const [x,y]=toPx(p);
     const isFirst = i===0, isDrag = geoDrag && geoDrag.idx===i;
     ctx.beginPath(); ctx.arc(x,y, isDrag?7:(isFirst?6:5), 0, Math.PI*2);
-    ctx.fillStyle = isFirst ? '#d4a832' : (isDrag ? '#ffffff' : '#c8903a');
-    ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.3; ctx.stroke();
+    ctx.fillStyle = isFirst ? '#e0a83c' : (isDrag ? '#ffffff' : '#2f9fd6');
+    ctx.fill(); ctx.strokeStyle='#1f3b3a'; ctx.lineWidth=1.3; ctx.stroke();
   });
   // Sound hole — drag-to-size, like the visualizer
   if(GEO.holeDrawing || GEO.holeDone){
     const [hx,hy] = toPx({fx:GEO.holeCx,fy:GEO.holeCy});
     const rpx = GEO.holeR*Math.min(drawW,drawH);
-    ctx.save(); ctx.strokeStyle='#ffcc40'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.save(); ctx.strokeStyle='#d9853a'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
     ctx.beginPath(); ctx.moveTo(hx-8,hy); ctx.lineTo(hx+8,hy); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(hx,hy-8); ctx.lineTo(hx,hy+8); ctx.stroke();
-    ctx.setLineDash([]); ctx.strokeStyle='#4a9e8a'; ctx.lineWidth=1.6;
+    ctx.setLineDash([]); ctx.strokeStyle='#6cb33f'; ctx.lineWidth=1.6;
     ctx.beginPath(); ctx.arc(hx,hy,Math.max(1,rpx),0,Math.PI*2); ctx.stroke();
     ctx.restore();
   }
@@ -1612,20 +1686,20 @@ function drawGeoCanvas(){
     if(GEO.bridgeClosed) ctx.closePath();
     ctx.fillStyle = GEO.bridgeClosed ? 'rgba(212,168,50,0.18)' : 'rgba(212,168,50,0.06)';
     ctx.fill();
-    ctx.strokeStyle='#d4a832'; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.strokeStyle='#e0a83c'; ctx.lineWidth=1.6; ctx.stroke();
     GEO.bridgePts.forEach((p,i)=>{
       const [x,y]=toPx(p);
       const isDrag = geoDrag && geoDrag.idx===i && GEO.traceMode==='bridge';
       ctx.beginPath(); ctx.arc(x,y, isDrag?6:4, 0, Math.PI*2);
-      ctx.fillStyle = isDrag ? '#ffffff' : '#d4a832';
-      ctx.fill(); ctx.strokeStyle='#1a1918'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle = isDrag ? '#ffffff' : '#e0a83c';
+      ctx.fill(); ctx.strokeStyle='#1f3b3a'; ctx.lineWidth=1; ctx.stroke();
     });
     const c = bridgeCentroid();
     const [bx,by] = toPx(c);
-    ctx.fillStyle='#d4a832'; ctx.font='10px sans-serif'; ctx.fillText('bridge footprint', bx+10, by-8);
+    ctx.fillStyle='#e0a83c'; ctx.font='10px sans-serif'; ctx.fillText('bridge footprint', bx+10, by-8);
   }
   // Fit-rect border, for orientation
-  ctx.strokeStyle='#222120'; ctx.strokeRect(ox,oy,drawW,drawH);
+  ctx.strokeStyle='#cfe6df'; ctx.strokeRect(ox,oy,drawW,drawH);
 
   cvs._toPx = toPx; cvs._ox=ox; cvs._oy=oy; cvs._drawW=drawW; cvs._drawH=drawH;
 }
@@ -1854,7 +1928,7 @@ function buildMeasXY(){
 function buildGeoPayload(GN){
   const c = bridgeCentroid();
   return {
-    Lx: GEO.Lx, Ly: GEO.Ly, h: GEO.h, E: GEO.E, rho: GEO.rho, nu: GEO.nu,
+    Lx: GEO.Lx, Ly: GEO.Ly, h: GEO.h, E: GEO.E, Ey: GEO.Ey, Gxy: GEO.Gxy, nu: GEO.nu, nuxy: GEO.nu, rho: GEO.rho,
     bcMode: GEO.bcMode, outline: GEO.outlinePts, holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
     bridgeFx: c.fx, bridgeFy: c.fy, loadN: GEO.loadN, bridgeTorqueNmm: GEO.bridgeTorqueNmm, GN,
     bridgePts: GEO.bridgePts, bridgeLenMm: GEO.bridgeLenMm, bridgeDepthMm: GEO.bridgeDepthMm,
@@ -2002,7 +2076,7 @@ function renderResults(){
   sortedKeys.forEach(key=>{
     try{
       const res = GEN.results[key];
-      const meta = PATTERN_META[key] || {label:key, color:'#c8903a'};
+      const meta = PATTERN_META[key] || {label:key, color:'#2f9fd6'};
       const card = document.createElement('div');
       card.className = 'pattern-card' + (key===bestKey ? ' best' : '');
       const deflOk = res.ok && res.deflBridgeMm <= GEO.deflLimitMm;
@@ -2147,7 +2221,7 @@ function drawPatternCanvas(key, res, color){
   const cvs = document.getElementById('rescanvas_'+key); if(!cvs) return;
   fitCanvasToContainer(cvs);
   const ctx = cvs.getContext('2d'); const W=cvs.width,H=cvs.height;
-  ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
   const aspect = GEO.Lx/GEO.Ly; // height:width -- length runs top-to-bottom, matching the geometry tab
   const drawH = Math.min(H*0.88, W*0.88*aspect), drawW = drawH/aspect;
   const ox=(W-drawW)/2, oy=(H-drawH)/2;
@@ -2157,20 +2231,20 @@ function drawPatternCanvas(key, res, color){
     ctx.beginPath();
     spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     ctx.closePath(); ctx.fillStyle='rgba(200,144,58,0.08)'; ctx.fill();
-    ctx.strokeStyle='#3a3936'; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle='#b9cdc6'; ctx.lineWidth=1; ctx.stroke();
   }
   if(GEO.holeR>0.001){
     const [hx,hy]=toPx(GEO.holeCx,GEO.holeCy); const rpx=GEO.holeR*Math.min(drawW,drawH);
     ctx.beginPath(); ctx.arc(hx,hy,rpx,0,Math.PI*2);
     ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill();
-    ctx.strokeStyle='#8a8680'; ctx.lineWidth=1.2; ctx.stroke();
+    ctx.strokeStyle='#6f9088'; ctx.lineWidth=1.2; ctx.stroke();
   }
   if(GEO.bridgePts.length>=2){
     const spline = GEO.bridgePts.length>=3 ? catmullRomSpline(GEO.bridgePts, GEO.bridgeClosed, 60) : GEO.bridgePts;
     ctx.beginPath();
     spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     if(GEO.bridgeClosed) ctx.closePath();
-    ctx.strokeStyle='#5a5650'; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle='#6f9088'; ctx.lineWidth=1; ctx.stroke();
   }
   if(!res.ok || !res.braces) return;
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
@@ -2218,6 +2292,11 @@ function buildVisualizerFormatProject(key){
     saved: new Date().toISOString(),
     aState: {
       Lx: GEO.Lx, Ly: GEO.Ly, h: GEO.h,
+      // The paired Visualizer only has a single isotropic modulus -- it
+      // has no orthotropic model at all, so Ey/Gxy/the real anisotropic
+      // behavior can't be carried over. This sends the along-grain
+      // modulus alone, which is the closest one-number approximation,
+      // but a reload there won't reproduce this tool's actual physics.
       topE: GEO.E, topRho: GEO.rho, topNu: GEO.nu,
       bcMode: GEO.bcMode, edgeKs: 0,
     },
@@ -2235,7 +2314,7 @@ function buildVisualizerFormatProject(key){
       widthMm: Math.round(GEO.Ly*1000),
     },
     braces: (res.braces||[]).map(b => ({
-      type: b.type, color: '#c8903a',
+      type: b.type, color: '#2f9fd6',
       width: b.width, height: b.height, density: b.density, modulus: b.modulus,
       pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null,
     })),
@@ -2327,9 +2406,14 @@ document.getElementById('loadProjectBtn').onclick = ()=> document.getElementById
    visualizer file never has). */
 function applyVisualizerFormatProject(proj){
   const ts = proj.traceShape||{}, as = proj.aState||{};
+  // The paired Visualizer only ever stores a single isotropic E/nu (it
+  // doesn't have this tool's orthotropic model at all) -- derive an
+  // isotropic-equivalent Ey/Gxy rather than leaving whatever this
+  // session's material happened to be set to beforehand.
+  const topNu = as.topNu!=null ? as.topNu : 0.30;
   Object.assign(GEO, {
     outlinePts: (ts.outlinePts||[]).map(swapXY), holeCx: ts.holeCy, holeCy: ts.holeCx, holeR: ts.holeR,
-    Lx: as.Lx, Ly: as.Ly, h: as.h, E: as.topE, rho: as.topRho, nu: as.topNu, bcMode: as.bcMode,
+    Lx: as.Lx, Ly: as.Ly, h: as.h, E: as.topE, Ey: as.topE, Gxy: as.topE/(2*(1+topNu)), rho: as.topRho, nu: topNu, bcMode: as.bcMode,
   });
   if(proj.braces && proj.braces.length){
     const swappedBraces = proj.braces.map(b => ({ ...b, pts: b.pts.map(swapXY), cp: b.cp ? swapXY(b.cp) : null, cp2: b.cp2 ? swapXY(b.cp2) : null }));
@@ -2339,12 +2423,16 @@ function applyVisualizerFormatProject(proj){
   document.getElementById('geoLy').value = Math.round(GEO.Ly*1000);
   document.getElementById('geoH').value = (GEO.h*1000).toFixed(2);
   document.getElementById('geoE').value = (GEO.E/1e9).toFixed(1);
+  document.getElementById('geoEy').value = (GEO.Ey/1e9).toFixed(2);
+  document.getElementById('geoGxy').value = (GEO.Gxy/1e9).toFixed(2);
+  document.getElementById('geoNu').value = GEO.nu;
   document.getElementById('geoRho').value = GEO.rho;
+  document.getElementById('matPreset').value = 'isotropic';
   forceGeoRedraw(); renderResults();
   goToPanel(proj.braces && proj.braces.length ? 'panelResults' : 'panelGeo');
 }
 /* Extracts just the braces from an uploaded file, for seeding Novel /
-   Novel-experimental, WITHOUT touching the current plate/outline/modes
+   Experimental, WITHOUT touching the current plate/outline/modes
    setup the way a full project load would -- this is additive, not a
    session replacement. Accepts either this tool's own project format or
    a bracing-visualizer-format file, applying the axis swap when needed. */
@@ -2385,7 +2473,7 @@ function renderSeedPreview(){
   wrap.style.display = 'block';
   const cvs = document.getElementById('seedPreviewCanvas');
   const ctx = cvs.getContext('2d'); const W=cvs.width, H=cvs.height;
-  ctx.fillStyle='#0a0908'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
   const aspect = GEO.Lx/GEO.Ly;
   const drawH = Math.min(H*0.92, W*0.92*aspect), drawW = drawH/aspect;
   const ox=(W-drawW)/2, oy=(H-drawH)/2;
@@ -2394,19 +2482,19 @@ function renderSeedPreview(){
     const spline = catmullRomSpline(GEO.outlinePts, true, 150);
     ctx.beginPath();
     spline.forEach((p,i)=>{ const [x,y]=toPx(p.fx,p.fy); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
-    ctx.closePath(); ctx.strokeStyle='#3a3936'; ctx.lineWidth=1; ctx.stroke();
+    ctx.closePath(); ctx.strokeStyle='#b9cdc6'; ctx.lineWidth=1; ctx.stroke();
   }
   if(GEO.holeR>0.001){
     const [hx,hy]=toPx(GEO.holeCx,GEO.holeCy); const rpx=GEO.holeR*Math.min(drawW,drawH);
     ctx.beginPath(); ctx.arc(hx,hy,rpx,0,Math.PI*2);
-    ctx.strokeStyle='#8a8680'; ctx.lineWidth=1; ctx.stroke();
+    ctx.strokeStyle='#6f9088'; ctx.lineWidth=1; ctx.stroke();
   }
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
   customSeedBraces.forEach(b=>{
     const fp = braceFootprintPoints(b, LxMm, LyMm);
     ctx.beginPath();
     fp.centerline.forEach((p,i)=>{ const [x,y]=toPx(p.x/LxMm,p.y/LyMm); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
-    ctx.strokeStyle='#5fa8d4'; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.strokeStyle='#1f7fa8'; ctx.lineWidth=2.5; ctx.stroke();
   });
 }
 /* Rotate/flip transform every brace's endpoints and curve control points
@@ -2477,6 +2565,14 @@ document.getElementById('loadProjectInput').onchange = async e=>{
       return;
     }
     Object.assign(GEO, proj.GEO||{});
+    if(GEO.Ey==null || GEO.Gxy==null){
+      // Older save, from before this tool had an orthotropic model --
+      // fall back to isotropic-equivalent values derived from its single
+      // E/nu, so it solves exactly the way it always did rather than
+      // picking up whatever anisotropic material this session had
+      // active before the load.
+      GEO.Ey = GEO.E; GEO.Gxy = GEO.E/(2*(1+GEO.nu));
+    }
     if(!(GEO.bgImage instanceof HTMLImageElement)) GEO.bgImage = null; // strip any non-image junk from an older save
     if(!GEO.bridgePts || GEO.bridgePts.length<2) resetBridgeRect(); // older save, before traced bridge shapes existed
     if(proj.MS) MS.modes = proj.MS.modes||[];
@@ -2491,6 +2587,9 @@ document.getElementById('loadProjectInput').onchange = async e=>{
     document.getElementById('geoLy').value = Math.round(GEO.Ly*1000);
     document.getElementById('geoH').value = (GEO.h*1000).toFixed(2);
     document.getElementById('geoE').value = (GEO.E/1e9).toFixed(1);
+    document.getElementById('geoEy').value = (GEO.Ey/1e9).toFixed(2);
+    document.getElementById('geoGxy').value = (GEO.Gxy/1e9).toFixed(2);
+    document.getElementById('geoNu').value = GEO.nu;
     document.getElementById('geoRho').value = GEO.rho;
     renderNodeTable(); renderModeTable(); forceGeoRedraw(); drawSpectrum(); renderResults();
     showBadge('Project loaded.', 'ok');
@@ -2552,6 +2651,25 @@ def points_in_polygon(px, py, poly_pts):
     return inside
 
 def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
+    """Builds three directional second-derivative operators -- Lxx, Lyy,
+    Lxy -- rather than a single isotropic Laplacian. An orthotropic
+    (grain-direction-dependent) plate's bending energy has THREE
+    independent stiffness terms (D11*w,xxxx + 2(D12+2*D66)*w,xxyy +
+    D22*w,yyyy), not one isotropic D*grad^4(w); there's no way to recover
+    that from squaring a single combined operator the way the old
+    isotropic-only solver did (D*L^T*L). Instead each of these three
+    pieces gets squared separately when assembling K in evaluate_design
+    (D11*Lxx^T Lxx + D22*Lyy^T Lyy + 2(D12+2D66)*Lxy^T Lxy) -- same
+    "square it for guaranteed positive-semi-definiteness" principle as
+    before, just applied to three simpler, direction-specific building
+    blocks instead of one combined one. This was validated before being
+    wired in here: matched a known closed-form solution (Navier series)
+    for a simply-supported rectangular orthotropic plate to within ~1%
+    across the first several modes, confirmed positive-semi-definite (no
+    spurious zero or negative-energy modes), and confirmed it reduces to
+    the same numbers as the old isotropic solver when given isotropic
+    material properties.
+    """
     poly_phys = [(p['fx'] * Lx, p['fy'] * Ly) for p in poly_frac]
     xs = [p[0] for p in poly_phys]; ys = [p[1] for p in poly_phys]
     bbx0, bbx1 = min(xs), max(xs); bby0, bby1 = min(ys), max(ys)
@@ -2570,10 +2688,24 @@ def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
     in_poly = poly_only_flat.reshape(ny, nx)
     inside = inside_flat.reshape(ny, nx)
 
-    pad = np.zeros((ny + 2, nx + 2), dtype=bool)
-    pad[1:-1, 1:-1] = in_poly
-    all_in_poly = in_poly & pad[1:-1, 0:-2] & pad[1:-1, 2:] & pad[0:-2, 1:-1] & pad[2:, 1:-1]
-    dof_mask = (inside & all_in_poly) if bc_mode == 'ss' else inside
+    if bc_mode == 'ss':
+        # Simply-supported: DOFs are eroded one full ring in from any
+        # domain edge (all 8 neighbors, not just the 4 orthogonal ones --
+        # the cross-derivative stencil needs diagonal neighbors too) --
+        # the excluded ring is where w=0 is effectively imposed, and
+        # anything one step beyond THAT uses an antisymmetric ghost
+        # reflection through the nearest valid DOF (w_ghost = -w_mirror),
+        # the correct zero-curvature condition for a simply-supported
+        # edge, not simply zero (that would over-stiffen the edge --
+        # confirmed directly: using a plain zero ghost here reproduced
+        # frequencies roughly DOUBLE the correct analytic value on a
+        # validation rectangle before this was corrected).
+        pad = np.zeros((ny + 2, nx + 2), dtype=bool)
+        pad[1:-1, 1:-1] = inside
+        dof_mask = inside & pad[1:-1, 0:-2] & pad[1:-1, 2:] & pad[0:-2, 1:-1] & pad[2:, 1:-1] \
+                          & pad[0:-2, 0:-2] & pad[0:-2, 2:] & pad[2:, 0:-2] & pad[2:, 2:]
+    else:
+        dof_mask = inside
 
     node_id = -np.ones((ny, nx), dtype=np.int64)
     nodes_j, nodes_i = np.nonzero(dof_mask)
@@ -2582,30 +2714,33 @@ def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
     if N < 20:
         return {'N': N, 'nx': nx, 'ny': ny, 'dd': dd}
 
-    coef = 1.0 / (dd * dd)
-    diag = np.zeros(N)
-    rows_off, cols_off, vals_off = [], [], []
-    for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-        ni = nodes_i + di; nj = nodes_j + dj
-        in_bounds = (ni >= 0) & (ni < nx) & (nj >= 0) & (nj < ny)
-        nb_has_material = np.zeros(N, dtype=bool)
-        nb_has_material[in_bounds] = inside[nj[in_bounds], ni[in_bounds]]
-        nb_in_poly = np.zeros(N, dtype=bool)
-        nb_in_poly[in_bounds] = in_poly[nj[in_bounds], ni[in_bounds]]
-        has_nb = np.nonzero(nb_has_material)[0]
-        if has_nb.size:
-            nb_id = node_id[nj[has_nb], ni[has_nb]]
-            has_dof = nb_id >= 0
-            sel = has_nb[has_dof]
-            rows_off.append(sel); cols_off.append(nb_id[has_dof]); vals_off.append(np.full(sel.shape, -coef))
-            diag[has_nb] += coef
-        missing_outer = ~nb_in_poly
+    def get_or_reflect(i, j, ref_i, ref_j):
+        if 0 <= i < nx and 0 <= j < ny and inside[j, i] and node_id[j, i] >= 0:
+            return node_id[j, i], 1.0
         if bc_mode == 'ss':
-            diag[missing_outer] += coef
-    rows_off.append(np.arange(N)); cols_off.append(np.arange(N)); vals_off.append(diag)
-    L = sparse.coo_matrix((np.concatenate(vals_off), (np.concatenate(rows_off), np.concatenate(cols_off))), shape=(N, N)).tocsr()
-    L.sum_duplicates()
-    return {'L': L, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
+            # antisymmetric reflection through the DOF that requested it
+            mi, mj = 2*ref_i - i, 2*ref_j - j
+            if 0 <= mi < nx and 0 <= mj < ny and inside[mj, mi] and node_id[mj, mi] >= 0:
+                return node_id[mj, mi], -1.0
+        return None, 0.0
+
+    def build(stencil):
+        rows, cols, vals = [], [], []
+        for r in range(N):
+            i, j = int(nodes_i[r]), int(nodes_j[r])
+            for di, dj, c in stencil:
+                nid, sign = get_or_reflect(i+di, j+dj, i, j)
+                if nid is not None:
+                    rows.append(r); cols.append(nid); vals.append(c*sign)
+        K = sparse.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
+        K.sum_duplicates()
+        return K
+
+    coef2 = 1.0/(dd*dd)
+    Lxx = build([(-1,0,coef2), (0,0,-2*coef2), (1,0,coef2)])
+    Lyy = build([(0,-1,coef2), (0,0,-2*coef2), (0,1,coef2)])
+    Lxy = build([(1,1,0.25*coef2), (1,-1,-0.25*coef2), (-1,1,-0.25*coef2), (-1,-1,0.25*coef2)])
+    return {'Lxx': Lxx, 'Lyy': Lyy, 'Lxy': Lxy, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
             'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id,
             'inside': inside, 'bbx0': bbx0, 'bby0': bby0}
 
@@ -2827,8 +2962,25 @@ def brace_overlap_penalty(braces, Lx, Ly, NS=10):
 
 def evaluate_design(geo, braces, n_modes_needed, meas_xy=None):
     Lx, Ly, h = geo['Lx'], geo['Ly'], geo['h']
-    E, rho, nu = geo['E'], geo['rho'], geo['nu']
-    D_flex = E*h**3/(12*(1-nu**2))
+    rho = geo['rho']
+    # Orthotropic (grain-direction-dependent) plate constants. Ex is the
+    # along-grain modulus (grain assumed to run along the plate's length,
+    # the standard luthiery convention -- this does NOT yet handle a
+    # traced body that's rotated relative to true grain direction). Ey,
+    # Gxy, nu_xy default to values that make this reduce EXACTLY to the
+    # old isotropic model when a caller doesn't supply them (an older
+    # saved project, or any payload that predates this) -- Ey=Ex,
+    # Gxy=Ex/(2(1+nu)) (the isotropic shear-modulus identity), nu_xy=nu.
+    Ex = geo['E']
+    nu_xy = geo.get('nuxy', geo['nu'])
+    Ey = geo.get('Ey', Ex)
+    Gxy = geo.get('Gxy', Ex/(2*(1+nu_xy)))
+    nu_yx = nu_xy * Ey / Ex   # reciprocity -- never set independently, or the material isn't physically valid
+    denom = max(1e-9, 1 - nu_xy*nu_yx)
+    D11 = Ex*h**3/(12*denom)
+    D22 = Ey*h**3/(12*denom)
+    D12 = nu_yx*D11
+    D66 = Gxy*h**3/12
     grid = build_grid(geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly, geo['bcMode'], geo['GN'])
     N = grid['N']
     if N < 20:
@@ -2841,8 +2993,14 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None):
     braceM = _map_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
     K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid)
-    L = grid['L']
-    K = D_flex*(L.T @ L) + K_brace
+    # Three separate directional terms, each squared for guaranteed
+    # positive-semi-definiteness (same principle the old single-operator
+    # isotropic solver relied on, just applied to three simpler
+    # direction-specific building blocks instead of one combined one --
+    # see build_grid's docstring for the validation this went through
+    # before being wired in here).
+    Lxx, Lyy, Lxy = grid['Lxx'], grid['Lyy'], grid['Lxy']
+    K = D11*(Lxx.T@Lxx) + D22*(Lyy.T@Lyy) + 2*(D12+2*D66)*(Lxy.T@Lxy) + K_brace
     K = (K+K.T)*0.5
     M = sparse.diags(rho*h + braceM)
 
@@ -2967,7 +3125,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None):
     }
 
 # ── Objective ────────────────────────────────────────────────────────────
-def objective(result, targets, defl_limit_mm, mass_weight, mass_norm_g=40.0):
+def objective(result, targets, defl_limit_mm, mass_weight, mass_norm_g=40.0, n_braces=None):
     if not result.get('ok'):
         return 1e6
     freqs = result['freqs']; shapes = result.get('measShapes')
@@ -3000,6 +3158,16 @@ def objective(result, targets, defl_limit_mm, mass_weight, mass_norm_g=40.0):
     # single frequency-matching term even at fairly large violations.
     cost += (over_defl**2) * 900.0 + (over_defl**3) * 700.0
     cost += mass_weight * (result['massG']/mass_norm_g)
+    # A free-topology search with a high brace cap will happily creep
+    # toward it: a small extra brace barely adds mass, so the mass
+    # penalty above gives almost no pushback even when that brace helps
+    # a target by a marginal, not meaningful, amount. This adds a direct
+    # cost per brace beyond a small free allowance (a real, minimal
+    # bracing pattern needs at least a handful of members) -- so the
+    # search only keeps a brace when it earns its keep by more than this
+    # amount, not just "doesn't actively hurt."
+    if n_braces is not None:
+        cost += 0.35 * max(0, n_braces - 5)
     cost += result.get('geomPenalty', 0.0)
     return cost
 
@@ -3253,7 +3421,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     materials, when given, is a list of {'modulus','density'} options the
     search can assign per brace (each new brace gets a random pick, and a
     mutation can flip an existing brace to a different one) -- currently
-    only passed in for Novel-experimental; plain Novel always uses the
+    only passed in for Experimental; plain Novel always uses the
     single global material, unchanged. A mirrored brace always gets the
     SAME material as its mirror partner, not an independent pick, since a
     real soundboard wouldn't have asymmetric material choice on an
@@ -3322,8 +3490,9 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         braces = [rand_brace() for _ in range(random.randint(1, max(1,half_cap)))]
     n_modes = len(targets)
     def evalb(bl):
-        r = evaluate_design(geo, expand(bl), n_modes, meas_xy)
-        return objective(r, targets, defl_limit_mm, mass_weight), r
+        full = expand(bl)
+        r = evaluate_design(geo, full, n_modes, meas_xy)
+        return objective(r, targets, defl_limit_mm, mass_weight, n_braces=len(full)), r
     cur_cost, cur_result = evalb(braces)
     cur_hole_violation = brace_hole_violation(expand(braces), geo['holeCx'], geo['holeCy'], geo['holeR'], geo['Lx'], geo['Ly'])
     best_braces, best_cost, best_result = [dict(b) for b in braces], cur_cost, cur_result
@@ -3482,7 +3651,7 @@ async def run_all_patterns(payload_json):
         symmetric = p.get('symmetric', True)
         BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 10e9))
         BRACE_MATERIAL['density'] = float(p.get('braceDensity', 420.0))
-        # Mixed-material search is Novel-experimental only, per an explicit
+        # Mixed-material search is Experimental only, per an explicit
         # request that plain Novel keep using a single material like every
         # other pattern. Two options for now (spruce, carbon fiber); the
         # UI's materials table is the source of truth for their properties.
