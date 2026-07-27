@@ -255,7 +255,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <canvas class="plot" id="spectrumCanvas" width="1100" height="260"></canvas>
     </div>
     <div class="card">
-      <div class="card-title">Design target modes <span class="pill on">these are what the optimizer solves for</span></div>
+      <div class="card-title">Design target modes</div>
       <div class="tag-note" style="margin-bottom:8px">Edit <b>Target</b> to set what you want each mode to become; <b>Measured</b> is the read-only baseline. Rows with no Measured value are pure design targets.</div>
       <div style="overflow-x:auto"><table class="data-table" id="modeTable">
         <thead><tr><th>Use</th><th>Label</th><th>Measured (Hz)</th><th>Target (Hz)</th><th>Δ</th><th>Tol (±Hz)</th><th>Weight</th><th>Match shape</th><th>Shape</th><th></th></tr></thead>
@@ -371,11 +371,21 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
       <div class="check-row"><input type="checkbox" id="novelSymmetric" checked><label style="margin:0">Enforce left-right symmetry</label></div>
       <div class="sbar-hint">Leave on unless deliberately exploring asymmetric bracing.</div>
+      <div class="sbar-hint" style="margin-top:10px; margin-bottom:2px">Hard limits — the search can never exceed these, regardless of what the targets ask for.</div>
+      <div class="param-row inline"><label>Max height (mm)</label><input type="number" id="novelMaxHeightMm" value="22" min="4" max="60" step="0.5"></div>
+      <div class="param-row inline"><label>Max thickness (mm)</label><input type="number" id="novelMaxThicknessMm" value="12" min="2" max="30" step="0.5"></div>
+      <div class="param-row inline"><label>Max length (mm)</label><input type="number" id="novelMaxLengthMm" value="" min="10" step="1" placeholder="no limit"></div>
+      <div class="sbar-hint">Length is measured brace-tip to brace-tip. Leave blank for no cap.</div>
     </div>
     <div class="sbar-section" id="novelExperimentalSettings" style="display:none">
       <div class="sbar-title">Experimental settings</div>
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelExpMaxBraces" value="20" min="2" max="40"></div>
       <div class="sbar-hint">A higher cap doesn't mean the search will use it all — braces beyond a small free allowance now have to earn their keep, not just avoid hurting the result. See Documentation.</div>
+      <div class="sbar-hint" style="margin-top:10px; margin-bottom:2px">Hard limits — the search can never exceed these, regardless of what the targets ask for.</div>
+      <div class="param-row inline"><label>Max height (mm)</label><input type="number" id="novelExpMaxHeightMm" value="22" min="4" max="60" step="0.5"></div>
+      <div class="param-row inline"><label>Max thickness (mm)</label><input type="number" id="novelExpMaxThicknessMm" value="12" min="2" max="30" step="0.5"></div>
+      <div class="param-row inline"><label>Max length (mm)</label><input type="number" id="novelExpMaxLengthMm" value="" min="10" step="1" placeholder="no limit"></div>
+      <div class="sbar-hint">Length is measured brace-tip to brace-tip. Leave blank for no cap.</div>
     </div>
     <div class="sbar-section" id="multiMaterialSettings" style="display:none">
       <div class="sbar-title">Materials available to this solver</div>
@@ -1128,7 +1138,7 @@ document.getElementById('quickAddBtn').onclick = ()=>{
   const hz = +document.getElementById('quickAddHz').value;
   if(!hz || hz<=0) return;
   MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+hz.toFixed(2),
-                   tol: Math.max(2, hz*0.03), weight:1, matchShape:false, nodeAmp:null, _manual:true });
+                   tol: 5, weight:1, matchShape:false, nodeAmp:null, _manual:true });
   renderModeTable(); drawSpectrum();
   document.getElementById('quickAddHz').value = '';
 };
@@ -1144,7 +1154,7 @@ document.getElementById('detectPeaksBtn').onclick = ()=>{
   MS.modes = MS.modes.filter(m=>m._manual); // keep manually-added rows, replace auto ones
   kept.forEach(i=>{
     MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+freq[i].toFixed(2),
-                     measuredFreq:+freq[i].toFixed(2), tol: Math.max(2, freq[i]*0.03), weight:1,
+                     measuredFreq:+freq[i].toFixed(2), tol: 5, weight:1,
                      matchShape:true, nodeAmp:null, _manual:false });
   });
   renderModeTable(); drawSpectrum();
@@ -1188,7 +1198,7 @@ function findPeaksWithProminence(freq, mag, minHz, maxHz, promDb){
 function appendLogSafe(msg){ const el=document.getElementById('genLog'); if(el){el.textContent+=msg+'\n';} }
 
 document.getElementById('addModeRowBtn').onclick = ()=>{
-  MS.modes.push({ id:nextModeId++, use:true, label:'target'+(MS.modes.length+1), freq:200, tol:10, weight:1, matchShape:false, nodeAmp:null, _manual:true });
+  MS.modes.push({ id:nextModeId++, use:true, label:'target'+(MS.modes.length+1), freq:200, tol:5, weight:1, matchShape:false, nodeAmp:null, _manual:true });
   renderModeTable();
 };
 
@@ -1370,7 +1380,7 @@ document.getElementById('spectrumCanvas').addEventListener('click', e=>{
   const freqClicked = cvs._xToFreq(xCss);
   if(freqClicked<f0||freqClicked>f1) return;
   MS.modes.push({ id:nextModeId++, use:true, label:'mode'+(MS.modes.length+1), freq:+freqClicked.toFixed(1),
-                   measuredFreq:+freqClicked.toFixed(1), tol: Math.max(2,freqClicked*0.03), weight:1, matchShape:true, nodeAmp:null, _manual:true });
+                   measuredFreq:+freqClicked.toFixed(1), tol: 5, weight:1, matchShape:true, nodeAmp:null, _manual:true });
   renderModeTable(); drawSpectrum();
 });
 
@@ -1991,6 +2001,12 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
     maxBraces: +document.getElementById('novelMaxBraces').value,
     maxBracesExperimental: +document.getElementById('novelExpMaxBraces').value,
     symmetric: document.getElementById('novelSymmetric').checked,
+    novelMaxHeightMm: +document.getElementById('novelMaxHeightMm').value || 22,
+    novelMaxThicknessMm: +document.getElementById('novelMaxThicknessMm').value || 12,
+    novelMaxLengthMm: (document.getElementById('novelMaxLengthMm').value.trim()==='' ? null : +document.getElementById('novelMaxLengthMm').value),
+    novelExpMaxHeightMm: +document.getElementById('novelExpMaxHeightMm').value || 22,
+    novelExpMaxThicknessMm: +document.getElementById('novelExpMaxThicknessMm').value || 12,
+    novelExpMaxLengthMm: (document.getElementById('novelExpMaxLengthMm').value.trim()==='' ? null : +document.getElementById('novelExpMaxLengthMm').value),
     hifiGN,
     displayGN: +document.getElementById('finalDisplayGN').value,
     braceModulus: +document.getElementById('braceE').value*1e9,
@@ -3406,7 +3422,7 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
     return best_x, best_cost, best_result, encode_fn(best_x, geo)
 
 # ── Simulated annealing over a variable-length free brace topology ──────
-async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None, lock_positions=False):
+async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None, lock_positions=False, max_height=22.0, max_width=12.0, max_length_mm=None):
     """Unconstrained search has no reason to ever land on a left-right
     symmetric layout by chance -- a symmetric configuration is a
     vanishingly small slice of the full search space, so pure random
@@ -3432,9 +3448,41 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     brace, so the exact layout of a warm-started design (an uploaded
     "Custom" design in particular) stays exactly where it was drawn.
     Requires warm_braces; without an existing layout to lock, there's
-    nothing to hold in place."""
+    nothing to hold in place.
+
+    max_height / max_width are hard ceilings (mm) on a brace's root
+    cross-section -- the search can never sample, mutate, or hold a
+    brace above these regardless of what the targets would otherwise
+    reward. The existing lower floors (3mm height, 1.5mm width) are
+    unchanged; only the ceiling is configurable. max_length_mm, when
+    given, is a hard ceiling (mm) on tip-to-tip brace length, enforced
+    by rescaling a too-long brace back down around its own midpoint --
+    applied after every mutation (not just at creation), the same way
+    the curve-bow safety net below re-clamps every iteration rather
+    than trusting a one-time check."""
     half_cap = max(1, max_braces//2) if symmetric else max_braces
     fy_lo, fy_hi = (0.15, 0.47) if symmetric else (0.15, 0.85)
+    min_height, min_width = 4.0, 2.0
+    max_height = max(min_height, float(max_height))
+    max_width = max(min_width, float(max_width))
+
+    def enforce_length_cap(brace_list):
+        """Rescale any brace whose tip-to-tip length exceeds max_length_mm
+        back down to the limit, symmetric about its own midpoint so a
+        length-mutation can't be undone by always favoring one endpoint."""
+        if not max_length_mm:
+            return
+        Lx_mm, Ly_mm = geo['Lx']*1000.0, geo['Ly']*1000.0
+        for b in brace_list:
+            p0, p1 = b['pts'][0], b['pts'][1]
+            dx, dy = (p1['fx']-p0['fx'])*Lx_mm, (p1['fy']-p0['fy'])*Ly_mm
+            L = math.hypot(dx, dy)
+            if L > max_length_mm and L > 1e-9:
+                scale = max_length_mm / L
+                mx, my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
+                hx, hy = (p1['fx']-p0['fx'])*scale/2.0, (p1['fy']-p0['fy'])*scale/2.0
+                p0['fx'], p0['fy'] = clamp01(mx-hx), clamp01(my-hy)
+                p1['fx'], p1['fy'] = clamp01(mx+hx), clamp01(my+hy)
 
     def rand_material():
         if not materials: return None
@@ -3455,13 +3503,15 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     def rand_brace():
         x1,y1 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
         x2,y2 = random.uniform(0.1,0.9), random.uniform(fy_lo,fy_hi)
-        h = random.uniform(4,22); w = random.uniform(2,12)
+        h = random.uniform(min_height,max_height); w = random.uniform(min_width,max_width)
         mat = rand_material()
         b = make_brace(x1,y1,x2,y2,h,w, height_tip=h*random.uniform(0.4,1.0), width_tip=w*random.uniform(0.4,1.0),
                         modulus=(mat['modulus'] if mat else None), density=(mat['density'] if mat else None))
+        enforce_length_cap([b])
+        p0,p1 = b['pts'][0], b['pts'][1]
+        mx,my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
+        dx,dy = p1['fx']-p0['fx'], p1['fy']-p0['fy']; L = math.hypot(dx,dy) or 1e-6
         if random.random() < 0.4:
-            mx,my = (x1+x2)/2, (y1+y2)/2
-            dx,dy = x2-x1, y2-y1; L = math.hypot(dx,dy) or 1e-6
             nx_,ny_ = -dy/L, dx/L
             bow = random.uniform(-1,1) * min(0.15, L*0.45)
             b['type'] = 'curve'; b['cp'] = {'fx':clamp01(mx+nx_*bow), 'fy':clamp01(my+ny_*bow)}
@@ -3488,6 +3538,17 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
                 if mat: b['modulus'], b['density'] = mat['modulus'], mat['density']
     else:
         braces = [rand_brace() for _ in range(random.randint(1, max(1,half_cap)))]
+    # Whichever path built the starting set (random or warm-started), make
+    # sure it actually satisfies today's hard limits before the search even
+    # begins -- a warm start from a prior run (or a different limit
+    # setting) could otherwise start out already violating a ceiling that
+    # was only just dialed down.
+    enforce_length_cap(braces)
+    for b in braces:
+        b['height'] = max(3.0, min(max_height, b['height']))
+        b['width'] = max(1.5, min(max_width, b['width']))
+        if b.get('heightTip') is not None: b['heightTip'] = max(2.0, min(b['height'], b['heightTip']))
+        if b.get('widthTip') is not None: b['widthTip'] = max(1.0, min(b['width'], b['widthTip']))
     n_modes = len(targets)
     def evalb(bl):
         full = expand(bl)
@@ -3548,8 +3609,8 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             # independently, so width and height can each end up tapered
             # differently (or not at all).
             b = cand[random.randrange(len(cand))]
-            b['height'] = max(3.0, min(24.0, b['height'] + random.uniform(-2.5,2.5)))
-            b['width'] = max(1.5, min(13.0, b['width'] + random.uniform(-1.5,1.5)))
+            b['height'] = max(3.0, min(max_height, b['height'] + random.uniform(-2.5,2.5)))
+            b['width'] = max(1.5, min(max_width, b['width'] + random.uniform(-1.5,1.5)))
             hTip = b.get('heightTip') if b.get('heightTip') is not None else b['height']
             wTip = b.get('widthTip') if b.get('widthTip') is not None else b['width']
             b['heightTip'] = max(2.0, min(b['height'], hTip + random.uniform(-2.0,2.0)))
@@ -3583,6 +3644,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         # the NEW, shorter chord and loop -- re-clamp every curved brace
         # to its current chord every iteration, not just the one the bend
         # mutation happened to touch this time.
+        enforce_length_cap(cand)
         for b in cand:
             if not b.get('cp'):
                 continue
@@ -3642,6 +3704,12 @@ async def run_all_patterns(payload_json):
         iters = p['iters']; patterns = p['patterns']; fan_n = p.get('fanCount',5)
         max_braces = p.get('maxBraces',6)
         max_braces_exp = p.get('maxBracesExperimental', 20)
+        novel_max_height = p.get('novelMaxHeightMm', 22.0)
+        novel_max_width = p.get('novelMaxThicknessMm', 12.0)
+        novel_max_length = p.get('novelMaxLengthMm')  # None/absent = no cap
+        exp_max_height = p.get('novelExpMaxHeightMm', 22.0)
+        exp_max_width = p.get('novelExpMaxThicknessMm', 12.0)
+        exp_max_length = p.get('novelExpMaxLengthMm')  # None/absent = no cap
         # The experimental pattern always searches asymmetrically with a
         # much higher brace cap, so it has a substantially larger space to
         # cover than "novel" for the same iteration count -- used both for
@@ -3686,7 +3754,9 @@ async def run_all_patterns(payload_json):
             results['falcate'] = (braces, cost, coarse_x)
         if 'novel' in patterns and not CANCEL_FLAG['stop']:
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
-                                                    max_braces, iters, _progress, 'novel', symmetric)
+                                                    max_braces, iters, _progress, 'novel', symmetric,
+                                                    max_height=novel_max_height, max_width=novel_max_width,
+                                                    max_length_mm=novel_max_length)
             results['novel'] = (braces, cost, None)
         if 'novelExperimental' in patterns and not CANCEL_FLAG['stop']:
             # Same search, same mass penalty keeping it honest -- just with
@@ -3700,7 +3770,9 @@ async def run_all_patterns(payload_json):
             iters_exp = int(iters * exp_scale)
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
                                                     max_braces_exp, iters_exp, _progress, 'novelExperimental',
-                                                    symmetric=False, materials=exp_materials)
+                                                    symmetric=False, materials=exp_materials,
+                                                    max_height=exp_max_height, max_width=exp_max_width,
+                                                    max_length_mm=exp_max_length)
             results['novelExperimental'] = (braces, cost, None)
         if 'custom' in patterns and seed_braces and not CANCEL_FLAG['stop']:
             # Optimizes the actual uploaded/selected design -- its own
@@ -3753,10 +3825,13 @@ async def run_all_patterns(payload_json):
                 r = evaluate_design(hifi_geo, braces, n_modes, meas_xy)
             elif key == 'novel' or key == 'novelExperimental' or key == 'custom':
                 lockp = False
+                limit_kwargs = {}
                 if key == 'novel':
                     sym, cap, this_polish_iters, mats = symmetric, max_braces, polish_iters, None
+                    limit_kwargs = {'max_height': novel_max_height, 'max_width': novel_max_width, 'max_length_mm': novel_max_length}
                 elif key == 'novelExperimental':
                     sym, cap, this_polish_iters, mats = False, max_braces_exp, int(polish_iters * exp_scale), exp_materials
+                    limit_kwargs = {'max_height': exp_max_height, 'max_width': exp_max_width, 'max_length_mm': exp_max_length}
                 else:  # custom
                     sym = custom_symmetric
                     cap = max(1, len(braces) if not sym else (len(braces)+1)//2 * 2)
@@ -3765,7 +3840,7 @@ async def run_all_patterns(payload_json):
                 polished_braces, polished_cost, r = await sa_free_topology(
                     hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
                     this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
-                    materials=mats, lock_positions=lockp)
+                    materials=mats, lock_positions=lockp, **limit_kwargs)
             else:
                 enc, bounds = ENCODERS[key]
                 # Warm-start the polish search from the coarse winner's own
