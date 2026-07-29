@@ -218,14 +218,13 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="sbar-title">Node stencil</div>
       <div class="sbar-hint">Maps hammer position labels to physical (x,y) mm. Check/edit the table after loading.</div>
       <button class="btn" id="pickStencilBtn">Browse stencil JSON…</button>
-      <div class="status" id="stencilStatus">No stencil loaded — using an evenly spaced placeholder grid until you load or edit one.</div>
+      <div class="status" id="stencilStatus">No stencil loaded, using an evenly spaced placeholder grid. </div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Spectrum source</div>
       <label>Plot / detect peaks on</label>
-      <select id="spectrumSource"><option value="composite">Composite (average of all nodes)</option></select>
+      <select id="spectrumSource"><option value="composite">Composite node average</option></select>
       <div class="check-row"><input type="checkbox" id="spectrumLogX" checked><label style="margin:0">Log frequency axis</label></div>
-      <div class="sbar-hint">If a peak doesn't match ObieWebApp's FRF View, switch to that same node here.</div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Peak detection</div>
@@ -272,7 +271,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <button class="btn" id="addModeRowBtn" style="margin-top:8px">+ Add target mode</button>
     </div>
     <div class="confirm-bar">
-      <span class="msg" id="confirmMsg_panelModes">Optional — add targets above if you want the search to hit specific frequencies, or skip straight to Braces to draw one by hand.</span>
+      <span class="msg" id="confirmMsg_panelModes">Optional — add targets to hit specific frequencies, or skip straight to Braces to draw by hand.</span>
       <button class="btn primary" id="confirmBtn_panelModes">Continue →</button>
     </div>
   </div>
@@ -295,7 +294,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Trace shapes</div>
-      <div class="sbar-hint">Left-click adds a point to whichever shape is selected below (or drags an existing one); right-click removes the nearest point.</div>
+      <div class="sbar-hint">Left-click to add/drag a point on selected shape; right-click removes the nearest point.</div>
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceOutlineBtn">● Outline</button><button class="btn" id="traceHoleBtn">○ Sound hole</button><button class="btn" id="traceBridgeBtn">▱ Bridge</button></div>
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceMoveImgBtn">✥ Move image</button><button class="btn" id="traceCloseBtn">Close shape</button></div>
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceUndoBtn">Undo point</button><button class="btn danger" id="traceClearBtn">Clear</button></div>
@@ -322,16 +321,16 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Shear modulus G_LR (GPa)</label><input type="number" id="geoGxy" value="0.69" step="0.01"></div>
       <div class="param-row inline"><label>Poisson's ratio ν_LR</label><input type="number" id="geoNu" value="0.37" step="0.01"></div>
       <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="420"></div>
-      <div class="sbar-hint">Assumes grain runs along the plate's length. See Documentation for the model and where its numbers come from.</div>
+      <div class="sbar-hint">Assumes grain runs along length of plate. See Documentation for the model and where its numbers come from.</div>
       <label>Edge boundary condition</label>
       <select id="geoBC"><option value="ss">Simply supported (glued to rim)</option><option value="free">Free (unsupported reference)</option></select>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Strength constraint</div>
-      <div class="param-row inline"><label>Bridge/string load (N)</label><input type="number" id="loadN" value="300"></div>
+      <div class="param-row inline"><label>Vertical bridge string load (N)</label><input type="number" id="loadN" value="300"></div>
       <div class="param-row inline"><label>Bridge torque (N·mm)</label><input type="number" id="bridgeTorque" value="10000"></div>
       <div class="param-row inline"><label>Max deflection at bridge (mm)</label><input type="number" id="deflLimit" value="2"></div>
-      <div class="sbar-hint">Set torque to 0 for a pure vertical load. See Documentation for the model used.</div>
+      <div class="sbar-hint">Set torque to 0 for a pure vertical load. See Documentation for model.</div>
       <div class="sbar-hint">Trace the actual bridge footprint with the ▱ Bridge tool above, or use "Reset bridge to rectangle" below for a quick starting shape, then drag its corners to match.</div>
       <div class="param-row inline"><label>Rectangle length (mm)</label><input type="number" id="bridgeLenMm" value="155"></div>
       <div class="param-row inline"><label>Rectangle depth (mm)</label><input type="number" id="bridgeDepthMm" value="12"></div>
@@ -366,7 +365,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <button class="btn primary" id="genModeAutoBtn" style="margin:0">🔍 Auto-generate</button>
         <button class="btn" id="genModeManualBtn" style="margin:0">✏️ Draw manually</button>
       </div>
-      <div class="sbar-hint">Auto-generate searches for bracing that hits your Targets. Draw manually skips search entirely — sketch a layout yourself and evaluate it directly, no targets needed.</div>
+      <div class="sbar-hint">Auto-generate searches for bracing patterns that hit your Targets. Manual Drawing skips search and evaluates brace shape with no targets.</div>
     </div>
     <div id="genModeAutoSidebar">
     <div class="sbar-section">
@@ -388,7 +387,6 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Max brace count</label><input type="number" id="novelMaxBraces" value="8" min="1" max="16"></div>
       <div class="check-row"><input type="checkbox" id="novelSymmetric" checked><label style="margin:0">Enforce left-right symmetry</label></div>
       <div class="sbar-hint">Leave on unless deliberately exploring asymmetric bracing.</div>
-      <div class="sbar-hint" style="margin-top:10px; margin-bottom:2px">Hard limits — the search can never exceed these, regardless of what the targets ask for.</div>
       <div class="param-row inline"><label>Max height (mm)</label><input type="number" id="novelMaxHeightMm" value="22" min="4" max="60" step="0.5"></div>
       <div class="param-row inline"><label>Max thickness (mm)</label><input type="number" id="novelMaxThicknessMm" value="12" min="2" max="30" step="0.5"></div>
       <div class="param-row inline"><label>Max length (mm)</label><input type="number" id="novelMaxLengthMm" value="" min="10" step="1" placeholder="no limit"></div>
@@ -436,10 +434,10 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <button class="btn" id="seedUploadBtn" style="width:100%; margin-top:8px">Choose file…</button>
       <input type="file" id="seedUploadInput" accept="application/json" style="display:none">
       <div class="sbar-hint" id="seedUploadStatus" style="margin-top:6px"></div>
-      <div class="sbar-hint">Accepts a file saved from this tool, or drawn by hand below.</div>
+      <div class="sbar-hint">Accepts a file saved from this tool, or drawn by hand.</div>
       <div id="seedPreviewWrap" style="display:none; margin-top:10px">
         <canvas id="seedPreviewCanvas" width="260" height="340" style="width:100%; max-width:220px; display:block; margin:0 auto; background:#ffffff; border:1px solid var(--border2); border-radius:4px"></canvas>
-        <div class="sbar-hint" style="text-align:center; margin-top:4px">If this doesn't match your body's actual orientation, use the buttons below — they change the design, not just the preview.</div>
+        <div class="sbar-hint" style="text-align:center; margin-top:4px">Use buttons below to match design to top shape</div>
         <div class="btn-row" style="margin-top:8px">
           <button class="btn" id="seedRotateCW" style="font-size:11px">⟳ Rotate 90°</button>
           <button class="btn" id="seedRotateCCW" style="font-size:11px">⟲ Rotate 90°</button>
@@ -450,7 +448,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         </div>
       </div>
       <div class="check-row" style="margin-top:10px"><input type="checkbox" id="customLockPositions"><label style="margin:0">Lock brace positions</label></div>
-      <div class="sbar-hint">Dimensions only, layout untouched (except to clear the soundhole, which always takes priority). See Documentation.</div>
+      <div class="sbar-hint">Dimensions only, layout untouched.</div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Brace material</div>
@@ -490,7 +488,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <button class="btn primary" id="manualToolLine" style="margin:0">／ Line</button>
           <button class="btn" id="manualToolCurve" style="margin:0">〜 Curve</button>
         </div>
-        <div class="sbar-hint">Line/Curve: click-drag from one end to the other, like the old Visualizer. Select: drag an endpoint, the curve handle, or the whole brace; click empty space to deselect; Delete/Backspace removes the selected brace.</div>
+        <div class="sbar-hint">Line/Curve: click-drag from one end to the other. Select: drag an endpoint, the curve handle, or the whole brace. Click empty space to deselect. Delete/Backspace removes the selected brace.</div>
       </div>
       <div class="sbar-section">
         <div class="sbar-title">Brace color</div>
@@ -529,7 +527,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <button class="btn danger" id="manualClearBtn">✕ Clear all braces</button>
         <button class="btn primary" id="manualEvaluateBtn" style="margin-top:8px">▶ Evaluate this design</button>
         <button class="btn" id="manualSendToOptimizerBtn" style="margin-top:6px">🔍 Send to optimizer to refine…</button>
-        <div class="sbar-hint">"Send to optimizer" seeds the Custom pattern with exactly what's drawn here — switch to Auto-generate, keep only "Custom" checked (done for you), and hit Generate to have the search improve it instead of just evaluating it as-is.</div>
+        <div class="sbar-hint">"Send to optimizer" seeds the Custom pattern with exactly what's drawn here. Switch to Auto-generate, keep only "Custom" checked, and hit "Generate" to have the search improve it instead of just evaluating it as-is.</div>
         <div class="status" id="manualEvalStatus">Draw at least one brace, then evaluate.</div>
       </div>
     </div>
@@ -552,7 +550,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <button class="zoom-btn" id="braceZoomIn" title="Zoom in">+</button>
         </div>
       </div>
-      <div class="tag-note" style="margin-top:8px">Click and drag from one end of the brace to the other, then release — same as the old Visualizer. Switch to Select to drag it into shape afterward.</div>
+      <div class="tag-note" style="margin-top:8px">Click and drag from one end of the brace to the other, then release. Switch to Select to drag it into shape afterward.</div>
     </div>
   </div>
 
@@ -676,84 +674,64 @@ Object.keys(PANEL_VALIDATORS).forEach(panelId=>{
 
 document.getElementById('helpBtn').onclick = ()=>{
   document.getElementById('helpBody').innerHTML = `
-  <p><b>What this tool does:</b> one merged workspace for guitar (or violin) top bracing — search for bracing that hits
-  specific target frequencies, or draw a layout by hand and see what it actually does, without switching tools or exporting
-  files between them. Setup handles plate geometry, material, and load; Targets (optional) is where measured data or
-  hand-typed frequency goals live; Braces lets you either auto-generate against those targets or draw a layout yourself with
-  no targets at all; Results shows whatever you produced either way, side by side and on equal footing.</p>
+  <p><b>What this tool does:</b> a simulated enviorment which optimizies acoustic string instrument bracing. By Searching for bracing that
+  allows an instrument sound board to vibrate at specific target frequencies while maintaining structural integrity, more intentional instruments
+  can be built. "dSetup" handles plate geometry, material, and load; "Targets" is where measured plate data or
+  hand-input frequency goals live; "Braces" uses simmulated annealing to match bracing patterns against those targets 
+  or draw a layout with no targets at all; "Results" shows whatever is produced alongside a simple visualization of 3d mode shapes.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 1 — Setup</h4>
-  <p><b>The top's material model is orthotropic</b> (direction-dependent), not a single isotropic modulus — real spruce is
-  roughly 15× stiffer along the grain than across it, and that difference genuinely changes mode shapes, not just
-  frequencies. The governing equation has three independent stiffness terms instead of one:</p>
-  <p style="text-align:center; font-style:italic">D₁₁·w,<sub>xxxx</sub> + 2(D₁₂+2D₆₆)·w,<sub>xxyy</sub> + D₂₂·w,<sub>yyyy</sub> = q</p>
+  <p><b>The material model of this solver is orthotropic</b> (direction-dependent), not a single isotropic modulus. Real world materials 
+  like spruce are roughly 15× stiffer along the grain than across it, which has a large impact on plate behavior and vibration transfer.
+  The governing equation has three independent stiffness terms instead of one:
+  </p><p style="text-align:center; font-style:italic">D₁₁·w,<sub>xxxx</sub> + 2(D₁₂+2D₆₆)·w,<sub>xxyy</sub> + D₂₂·w,<sub>yyyy</sub> = q</p>
   <p>where D₁₁, D₂₂ come from the along-grain and across-grain moduli (Eₗ, Eᵣ), D₆₆ from the shear modulus (G_LR), and D₁₂
   from the major Poisson's ratio (ν_LR) — the minor ratio ν_RL is always derived from reciprocity (ν_LR/Eₗ = ν_RL/Eᵣ),
-  never set independently, since a material where that doesn't hold isn't physically valid. <b>Grain is assumed to run
-  along the plate's length</b> (the standard construction convention) — a traced body that's rotated relative to true
-  grain direction isn't accounted for. The default Sitka spruce and cedar ratios (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16) are the
-  values commonly cited in guitar-acoustics literature, not a specific lab measurement of your actual top — treat them as
-  a reasonable starting point, editable if you have better numbers for your material.</p>
-  <p>Discretization is finite-difference (not finite-element): three directional second-derivative operators, each
-  squared before being combined (same "square it for guaranteed positive-semi-definiteness" principle the old
-  isotropic-only version used with a single combined operator, just decomposed into three simpler direction-specific
-  pieces instead of one, since there's no single operator to square for a direction-dependent material). This was
-  validated against the known closed-form solution for a simply-supported rectangular orthotropic plate (Navier's
-  series solution) before being used on real traced bodies — matched to within about 1% across the first several
-  modes, confirmed free of spurious zero/negative-energy modes, and confirmed it reduces to the exact same numbers as
-  the old isotropic solver when given isotropic material properties. This is the same physics engine whether a design
-  comes from the search or from drawing braces by hand — the two used to be separate tools with separately-maintained
-  engines, which is exactly the kind of thing that quietly drifts out of sync; merging them removes that risk at the root.</p>
+  never set independently. <b>Grain is assumed to run along the plate's length</b> (a traced body that's rotated relative to true
+  grain direction isn't accounted for). The default Sitka spruce and cedar ratios (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16) are the
+  values commonly cited in the literature. Treat them as a reasonable starting point, editable if you have better numbers for your material.</p>
+  <p>Discretization is finite-difference: three directional second-derivative operators, each
+  squared before being combined. This was validated against the known closed-form solution for a simply-supported rectangular orthotropic plate
+  (Navier's series solution) before being used on real traced bodies — matched to within about 1% across the first several
+  modes, confirmed free of spurious zero/negative-energy modes. This is the same physics engine whether a design
+  comes from the search or from drawing braces by hand.</p>
   <p>A hand-traced outline is almost never perfectly bilateral, even when traced carefully — real photos have angle and lens
   distortion, and no top is traced pixel-perfect. Bracing patterns here (X-brace, fan, falcate) are exactly mirror-symmetric
   by construction, so a slightly lopsided body makes even correct bracing look off. "Symmetrize outline" resamples your
   traced shape into a length-vs-width envelope and averages the left/right half-width at every point along the body's
   length into a matching symmetric shape.</p>
-  <p><b>Bridge load model:</b> the load is spread over the actual bridge footprint you trace (or a quick rectangle you can
-  drag into shape), not concentrated at a single point — a true point load lets whichever bit of stiffness happens to sit
-  right there absorb it, which understates how a real bridge under string tension loads the top.</p>
+  <p><b>Bridge load model:</b> the load is spread over the traced bridge footprint, not concentrated at a single point</p>
   <p><b>Bridge torque:</b> strings don't just push straight down on the bridge — they break over the saddle at an angle,
-  which also <i>rotates</i> it: more force presses down on the neck-side edge of the footprint, less (or even lifting) on
+  which also <i>rotates</i> it: more force presses down on the neck-side edge of the footprint, lifting on
   the tail-side edge, on top of the net downward load. This is modeled as a torque distributed linearly across the
   footprint's depth, like combined axial+bending stress on a beam cross-section. <b>This is a rough approximation, not a
-  derived value</b> — there's no reliable source here for exactly how much torque a real break angle produces, so treat the
-  default as a starting point and tune it against whatever real deflection numbers you're comparing to. Set it to 0 to fall
-  back to a pure vertical load. A moment also needs force applied at spatially separated grid points to mean anything — if
-  the bridge footprint is shallower than the solving grid's spacing, torque literally has no room to act across, and results
-  will flag this directly when it happens rather than silently doing nothing.</p>
-  <p><b>What's actually reachable:</b> bracing only <i>adds</i> mass and stiffness to a top — for realistic brace sizes,
-  stiffening dominates, so a mode's frequency is easy to push up but very hard (often impossible) to push below what the
-  bare, unbraced plate already does on its own. The "Compute bare-plate reference" button solves the unbraced top so you can
-  check this before setting targets — a target below the matching bare-plate row is asking bracing to lower that mode, which
-  usually isn't achievable by adding material.</p>
+  derived value</b> Set it to 0 to fall back to a pure vertical load. A moment also needs force applied at spatially separated 
+  grid points to mean anything — if the bridge footprint is shallower than the solving grid's spacing, torque  
+  has no room to act across, and results will flag this directly when it happens rather than silently doing nothing.</p>
+  <p><b>What's actually reachable:</b> bracing only <i>adds</i> mass and stiffness to a top. For realistic brace sizes,
+  stiffening dominates, so a mode's frequency is easy to push up but very hard to push below what the bare,
+  unbraced plate already does on its own. The "Compute bare-plate reference" button solves the modes of the unbraced top 
+  so you can check this before setting targets — a target below the matching bare-plate row is asking bracing to lower that mode,
+  which usually isn't achievable by adding material.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 2 — Targets (optional)</h4>
-  <p>Fully skippable — if you just want to draw a bracing layout by hand and see what it does, go straight to the Braces
-  tab and use "Draw manually," no targets required at all. This step matters only if you want the search (Braces →
+  <p>Fully skippable, if you just want to draw a bracing layout by hand and see what it does, go straight to the Braces
+  tab and use "Draw manually," no targets required. This step matters only if you want the search (Braces →
   "Auto-generate") to aim at specific frequencies. Importing measured data is itself optional within this step: the target
   table works fine with zero imported data, since rows with no Measured value are pure hand-typed design targets.</p>
   <p>Mode shape extraction from measured data uses simple quadrature peak-picking: at the Measured frequency, the imaginary
   part of each node's FRF (by default) becomes that node's mode-shape amplitude. This is a standard lightweight
-  approximation, not a full modal parameter fit — treat extracted shapes as a target pattern for matching, not as ground
-  truth. If a detected peak doesn't line up with what you see in ObieWebApp's own FRF View, switch the spectrum source to
+  approximation, not a full modal parameter fit. Treat extracted shapes as a target pattern for matching, not as ground
+  truth. If a detected peak doesn't line up with what you see in an external FRF View, switch the spectrum source to
   that same single node here — the cross-node composite average can shift peak positions slightly versus any one node's
   curve. <b>Measured</b> is the baseline (what the plate currently does); <b>Target</b> is what you want bracing to change
   it to, freely editable and starting equal to Measured until you move it.</p>
-  <p>ObieApp's exact Stencil Builder JSON schema isn't published anywhere I could fetch (GitHub blocks automated access to the
-  source from here), so the stencil importer is deliberately flexible — it tries several common key names and falls back to
-  an editable table you can fill in by hand. The TRF/AvR/AvC binary parsers <i>are</i> built exactly to the published
-  byte-level spec in ObieApp's Technical Reference, so those should read real files correctly. If the folder picker does
-  nothing, that's almost always the browser or hosting blocking the folder-access API — this happens most often when opening
-  the file directly (<code>file://</code>) rather than through a server; "compatibility mode" works everywhere instead,
-  including local files.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 3 — Braces</h4>
-  <p><b>Auto-generate</b> searches for bracing that hits your Targets, same as before. <b>Draw manually</b> is new: click
-  twice on the plate to place a straight brace, use the bend slider afterward for a curved one, set dimensions and material
-  per brace or as defaults for new ones, then hit "Evaluate this design" for a single direct physics solve — no search, no
-  iteration, just the actual bracing you drew. Both paths produce the exact same kind of result and land in the same
-  Results view, since they now share one physics engine and one brace data format; there's no file to export and re-import
-  between "the search" and "the drawing tool" the way there used to be with two separate applications. A generated result's
+  <p><b>Auto-generate</b> searches for bracing that hits your Targets, same as before. <b>Draw manually</b> is more freeform:
+  click twice on the plate to place a straight brace, use the bend slider afterward for a curved one, set dimensions and material
+  per brace or as defaults for new ones, then hit "Evaluate this design" for a single direct physics solve with no simmulated solve
+  Both paths produce the exact same kind of result and land in the same Results view. A generated result's
   "Edit by hand" button loads it straight into the manual editor too, for tuning a search result by hand instead of
   starting from a blank plate.</p>
   <p>Each auto-generated pattern is searched independently with simulated annealing against one objective: frequency match
@@ -761,26 +739,23 @@ document.getElementById('helpBtn').onclick = ()=>{
   penalty for any brace material that lands outside the traced outline or onto the soundhole, a penalty for braces
   stacking on top of each other, and a small penalty on added mass. Search runs on a coarser grid for speed; the winning
   layout is then <i>polished</i>
-  with a short additional search at full resolution (not just re-measured once and accepted) before being shown, since a
-  design that's near-optimal on a coarse grid isn't guaranteed to still be optimal on a finer one — deflection especially is
+  with a short additional search at full resolution before being shown, since a
+  design that's near-optimal on a coarse grid isn't guaranteed to still be optimal on a finer one. Deflection especially is
   sensitive to grid resolution right at the load point.</p>
   <p><b>Fixed vs. free patterns:</b> X-brace, fan, and falcate hold to a fixed reference layout each (positions, angles, and
-  brace count aren't searched) — only each brace's width, height, and taper are optimized. "Novel", "Experimental",
-  and "Custom" are the only patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the
+  brace count aren't searched). Only each brace's width, height, and taper are optimized. "Novel", "Experimental",
+  and "Custom" are the patterns with positional freedom. "Novel" enforces left-right symmetry by construction (the
   search only touches one half of the plate and mirrors it for evaluation) — leave this on unless deliberately exploring
   asymmetric bracing, since an unconstrained search has no reason to land on a symmetric layout by chance, and asymmetric
   mode shapes skew the radiation pattern and bass/treble balance even when frequencies land on target. "Experimental" is
-  the same free search with the symmetry requirement and brace-count cap both removed — it isn't unconstrained, since the
-  same mass penalty still applies, just far less boxed in. Raising a free-topology pattern's max brace count doesn't mean
+  the same free search with the symmetry requirement and brace-count cap both removed. It isn't unconstrained, since the
+  same mass penalty still applies, just far less restricted. Raising a free-topology pattern's max brace count doesn't mean
   the search will actually use it all: beyond a small free allowance, each additional brace costs a direct, fixed amount —
-  it has to earn that back through a real improvement, not just avoid making things worse, which is what a high cap used
-  to produce before this existed (the search filling up toward whatever maximum was allowed, since a small extra brace
-  barely added enough mass to discourage it on its own). Brace material (modulus, density) is set once per run and
+  it has to earn that back through a measured improvement. Brace material (modulus, density) is set once per run and
   applied to every brace in every pattern; it's an isotropic-beam approximation, not modeling wood grain
   direction/anisotropy.</p>
-  <p><b>Custom</b> optimizes a design you upload (from this tool, the paired Visualizer, or a bare braces array — axis
-  convention is detected and corrected automatically) rather than a random or template layout, and runs as its own
-  independent result alongside whatever else is checked — check "Novel" and "Custom" together to compare a freshly
+  <p><b>Custom</b> optimizes a design you upload (from this tool's "Draw Manually" mode) rather than a random or template layout,
+  and runs as its own independent result alongside whatever else is checked — check "Novel" and "Custom" together to compare a freshly
   generated pattern against a tuned version of your own design side by side. If nothing's uploaded, Custom is skipped even
   if checked. <b>Lock brace positions</b> restricts its search to cross-section dimensions only — no brace is added,
   removed, moved, or bent, so the exact layout you drew stays exactly where it was; turn this on when the layout itself is
@@ -793,24 +768,21 @@ document.getElementById('helpBtn').onclick = ()=>{
   dropdown below, which represents a wood/CF hybrid laminate at a lower effective stiffness.</p>
   <p><b>Polish at full resolution</b> re-optimizes each coarse winner with a short additional search at hi-fi resolution
   before showing it, since a design that's near-optimal on the coarse search grid isn't guaranteed to still be optimal on
-  a finer one — deflection especially is sensitive to grid resolution right at the load point. Turning it off shows the
-  coarse-search result as-is (still re-measured, just not re-optimized) — faster, at the cost of that extra refinement.</p>
+  a finer one. Turning it off shows the coarse-search result as-is (still re-measured, just not re-optimized). </p>
   <p><b>Final display resolution (GN):</b> a finite-difference solve like this one converges from above — coarse grids
   overestimate stiffness, so frequencies (especially higher modes) drop as resolution increases, until settling near the
   true value. Search has to run at a much coarser, faster resolution (hundreds of solves per pattern), so after it
   finishes, one extra solve per pattern runs at this higher resolution, purely for the numbers actually shown — not per
-  iteration, so it's a small fixed cost regardless of how long the search itself took. Raise it to match a Visualizer
-  cross-check more closely; do expect real time at high values (Visualizer's own GN=260 took ~53s for one solve).</p>
+  iteration, so it's a small fixed cost regardless of how long the search itself took.</p>
   <p><b>If the search grid resolution feels too coarse</b> — results barely changing between runs or across iterations —
   raise it; cost is search speed, scaling roughly with the square of that number.</p>
   <p><b>Tuning tips for hitting tight tolerances on several targets at once:</b> run-to-run variance is real and worth
-  exploiting — the same setup can land 0 targets within tolerance on one run and all of them on the next, so re-running and
-  keeping the best result is a legitimate, low-effort strategy. Raise iterations rather than splitting the same budget into
-  several shorter runs (tested directly — splitting measurably hurts, since each restart needs to fully cool to converge).
-  Loosen the deflection limit if it's the binding constraint. Weight your most important modes higher and relax tolerance on
-  the rest. For "Novel", raise max brace count for more independent tuning freedom. With many simultaneous tight targets
-  sharing the same brace parameters, exact agreement on all of them may not exist in the achievable space at all — this is a
-  best-compromise search, not a guarantee.</p>
+  exploiting as the same setup can land 0 targets within tolerance on one run and all of them on the next, so re-running and
+  keeping the best result is a legitimate strategy. Raise iterations rather than splitting the same budget into
+  several shorter runs. Loosen the deflection limit if it's the binding constraint. Weight your most important modes higher
+  and relax tolerance on the rest. For "Novel", raise max brace count for more independent tuning freedom.
+  With many simultaneous tight targets sharing the same brace parameters, exact agreement on all of them may not exist in
+  the achievable space at all as this is a best-compromise search, not a guarantee.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">The physics and the optimizer</h4>
   <p>The plate physics (grid, brace mass mapping, brace bending-stiffness coupling, eigenvalue solve, static deflection
