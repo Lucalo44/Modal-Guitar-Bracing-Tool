@@ -4406,7 +4406,7 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         if cur_hole_violation is not None and violation > cur_hole_violation + 1e-12:
             if it % max(1,iters//25) == 0 or it==iters-1:
                 progress_cb(label, it, iters, best_cost, best_result)
-                await asyncio.sleep(0)
+            await asyncio.sleep(0)  # yield every iteration, not just on progress ticks -- keeps the page responsive during long runs
             continue
         result = evaluate_design(geo, braces, n_modes, meas_xy)
         for i,t in enumerate(targets):
@@ -4422,7 +4422,7 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
             best_valid_cost, best_valid_x = cost, cand.copy()
         if it % max(1,iters//25) == 0 or it==iters-1:
             progress_cb(label, it, iters, best_cost, best_result)
-            await asyncio.sleep(0)
+        await asyncio.sleep(0)
     if best_valid_x is not None:
         best_x, best_cost = best_valid_x, best_valid_cost
         best_result = evaluate_design(geo, encode_fn(best_x, geo), n_modes, meas_xy)
@@ -4676,7 +4676,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         if violation > cur_hole_violation + 1e-12:
             if it % max(1,iters//25) == 0 or it==iters-1:
                 progress_cb(label, it, iters, best_cost, best_result)
-                await asyncio.sleep(0)
+            await asyncio.sleep(0)  # yield every iteration, not just on progress ticks -- keeps the page responsive during long runs
             continue
         cost, result = evalb(cand)
         accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
@@ -4688,7 +4688,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             best_valid_cost, best_valid_braces = cost, [dict(b) for b in cand]
         if it % max(1,iters//25) == 0 or it==iters-1:
             progress_cb(label, it, iters, best_cost, best_result)
-            await asyncio.sleep(0)
+        await asyncio.sleep(0)
     if best_valid_braces is not None:
         return expand(best_valid_braces), best_valid_cost, evaluate_design(geo, expand(best_valid_braces), n_modes, meas_xy)
     return expand(best_braces), best_cost, best_result
