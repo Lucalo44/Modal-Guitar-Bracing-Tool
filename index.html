@@ -2711,6 +2711,10 @@ function renderResults(){
               <button class="btn" data-anim3dreset="${key}">⌂ Reset view</button>
               <button class="btn primary" data-anim3dexport="${key}">🎥 Export video (5 loops)</button>
             </div>
+            <div class="param-row" style="margin-top:6px"><label>Speed <span id="anim3dspeedVal_${key}">1.00×</span></label>
+              <input type="range" class="anim3dSpeedSlider" data-key="${key}" min="0.25" max="3" step="0.05" value="1"></div>
+            <div class="param-row"><label>Exaggeration <span id="anim3dexagVal_${key}">1.00×</span></label>
+              <input type="range" class="anim3dExagSlider" data-key="${key}" min="0.25" max="4" step="0.05" value="1"></div>
             <div class="status" id="anim3dstatus_${key}" style="margin-top:6px; display:none"></div>
           </div>` : ''}
           <div class="btn-row" style="margin-top:8px">
@@ -2934,6 +2938,7 @@ function getAnim3DState(key){
     scene:null, camera:null, renderer:null, controls:null, mesh:null, braceObjs:[],
     clock:null, rafId:null, initialized:false, container:null,
     activeMode:0, playing:true, phase:0, camInit:false,
+    speedMult:1, ampMult:1,
   };
   return ANIM3D[key];
 }
@@ -3161,9 +3166,9 @@ function animate3DFrame(key){
   const dt = Math.min(st.clock.getDelta(), 0.1);
   // Same stylized ~0.5Hz visual rate documented throughout this tool --
   // not the mode's real (inaudibly/unwatchably fast) acoustic frequency.
-  if(st.playing) st.phase += dt*1.0*Math.PI;
+  if(st.playing) st.phase += dt*1.0*Math.PI*(st.speedMult||1);
   const s = Math.sin(st.phase);
-  const ampMeters = 0.15*Math.min(GEO.Lx||0.4, GEO.Ly||0.3);
+  const ampMeters = 0.15*Math.min(GEO.Lx||0.4, GEO.Ly||0.3)*(st.ampMult||1);
   if(st.mesh){
     const geo=st.mesh.geometry, pos=geo.attributes.position, rawZ=geo._rawZ;
     for(let i=0;i<rawZ.length;i++) pos.setZ(i, rawZ[i]*ampMeters*s);
@@ -3220,6 +3225,22 @@ document.getElementById('resultsGrid').addEventListener('click', e=>{
   const exportBtn = e.target.closest('[data-anim3dexport]');
   if(exportBtn){ export3DVideo(exportBtn.dataset.anim3dexport, exportBtn); return; }
 });
+document.getElementById('resultsGrid').addEventListener('input', e=>{
+  const speedEl = e.target.closest('.anim3dSpeedSlider');
+  if(speedEl){
+    const key = speedEl.dataset.key;
+    getAnim3DState(key).speedMult = +speedEl.value;
+    document.getElementById('anim3dspeedVal_'+key).textContent = (+speedEl.value).toFixed(2)+'×';
+    return;
+  }
+  const exagEl = e.target.closest('.anim3dExagSlider');
+  if(exagEl){
+    const key = exagEl.dataset.key;
+    getAnim3DState(key).ampMult = +exagEl.value;
+    document.getElementById('anim3dexagVal_'+key).textContent = (+exagEl.value).toFixed(2)+'×';
+    return;
+  }
+});
 window.addEventListener('resize', ()=>{ Object.keys(ANIM3D).forEach(resize3D); });
 
 /* Records exactly 5 full loops of the stylized display period straight
@@ -3252,7 +3273,7 @@ async function export3DVideo(key, btn){
   try{ recorder = new MediaRecorder(stream, {mimeType: mime}); }
   catch(err){ showStatus('Could not start recording: '+err.message, 'err'); btn.disabled=false; return; }
   recorder.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
-  const period = 2.0, totalLoops = 5, totalSec = period*totalLoops;
+  const period = 2.0/(st.speedMult||1), totalLoops = 5, totalSec = period*totalLoops;
   const startTime = performance.now();
   recorder.onstop = ()=>{
     const blob = new Blob(chunks, {type: mime.split(';')[0]});
@@ -4078,10 +4099,10 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # visualization (Results panel) -- a regular grid over the
     # plate's bounding box, sampled the same way meas_shapes
     # is (bilinear off the solved eigenvector), just at many points
-    # instead of a handful. Deliberately LOW resolution (this is display
-    # only, not a solve) so it stays fast and the JSON payload stays
-    # small even with several modes per pattern and several patterns per
-    # run. Gated behind want_field (default False) since evaluate_design
+    # instead of a handful. Kept well below the solve grid's own resolution
+    # (this is display only, not a solve) so it stays fast and the JSON
+    # payload stays small even with several modes per pattern and several
+    # patterns per run. Gated behind want_field (default False) since evaluate_design
     # itself is the hot inner-loop cost function during search -- called
     # hundreds of times per pattern -- and this sampling is only ever
     # needed once, for the design that's actually kept.  Normalized per
@@ -4093,7 +4114,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # the JS renderer clips to the real outline/hole shape at draw time
     # using the same spline path it already draws for the bracing
     # diagram, so nothing outside the body is ever actually shown.
-    FIELD_NX, FIELD_NY = 44, 34
+    FIELD_NX, FIELD_NY = 96, 74
     field_shapes = None
     if want_field:
         fxs = np.linspace(0.02, 0.98, FIELD_NX) * Lx
@@ -4306,6 +4327,92 @@ def hole_relative_fn(geo):
         return (holeCx + (fx - _REF_HOLE_CX) * scale, holeCy + (fy - _REF_HOLE_CY) * scale)
     return hr
 
+# hr() above re-anchors a template to the real soundhole, but the templates
+# were authored (and their curve bows tuned) against one reference body
+# OUTLINE too -- a traced body whose proportions differ from that reference
+# can still legitimately place a template's tip past the real outline even
+# after the hole re-anchor. brace_geometry_penalty only discourages this via
+# the search objective, which does nothing here: X-brace/fan/falcate never
+# search position (only cross-section dims), so a penalty that can't change
+# any position can't fix it either. Hard-clip instead, specifically for
+# these fixed-position templates.
+def _bezier_split(ctrl, t):
+    """De Casteljau split of a Bezier curve (2=line, 3=quadratic, 4=cubic
+    control points) at parameter t. Returns (left, right) control-point
+    lists, each spanning the same number of points as ctrl and sharing the
+    point at t as their shared endpoint."""
+    pts = list(ctrl)
+    left, right = [pts[0]], [pts[-1]]
+    while len(pts) > 1:
+        pts = [((1-t)*pts[i][0]+t*pts[i+1][0], (1-t)*pts[i][1]+t*pts[i+1][1]) for i in range(len(pts)-1)]
+        left.append(pts[0]); right.append(pts[-1])
+    right.reverse()
+    return left, right
+
+def _bezier_subrange(ctrl, t0, t1):
+    """Control points for the portion of a Bezier curve spanning [t0,t1]
+    of the original, via two De Casteljau splits -- exact for line/
+    quadratic/cubic alike, so a clipped brace keeps its real curve shape
+    instead of just moving its endpoints and leaving the bow untouched."""
+    if t0 <= 0.0 and t1 >= 1.0:
+        return ctrl
+    if t1 < 1.0:
+        ctrl, _ = _bezier_split(ctrl, t1)
+        t0 = (t0/t1) if t1 > 1e-9 else 0.0
+    if t0 > 0.0:
+        _, ctrl = _bezier_split(ctrl, t0)
+    return ctrl
+
+def _clip_brace_to_outline(b, outline_frac, Lx, Ly, NS=40):
+    """Truncates a brace's endpoints inward along its own path so neither
+    end extends past the traced outline, preserving curve shape exactly via
+    Bezier subdivision rather than just relocating the endpoints. Returns
+    None if the entire brace falls outside (nothing left to keep)."""
+    if not outline_frac or len(outline_frac) < 3:
+        return b
+    poly_phys = [(p['fx']*Lx, p['fy']*Ly) for p in outline_frac]
+    pts = _sample_brace(b, Lx, Ly, NS)
+    xs = np.array([p[0] for p in pts]); ys = np.array([p[1] for p in pts])
+    inside = points_in_polygon(xs, ys, poly_phys)
+    if inside.all():
+        return b
+    if not inside.any():
+        return None
+    idxs = np.where(inside)[0]
+    i0, i1 = int(idxs[0]), int(idxs[-1])
+    t0 = pts[i0][3] if i0 == 0 else (pts[i0-1][3] + pts[i0][3]) / 2.0
+    t1 = pts[i1][3] if i1 == NS else (pts[i1][3] + pts[i1+1][3]) / 2.0
+    if t1 - t0 < 0.02:
+        return None  # sliver too short to keep as a brace
+    a, z = b['pts'][0], b['pts'][1]
+    if b.get('type') == 'curve3':
+        ctrl = [(a['fx'],a['fy']), (b['cp']['fx'],b['cp']['fy']), (b['cp2']['fx'],b['cp2']['fy']), (z['fx'],z['fy'])]
+    elif b.get('type') == 'curve':
+        ctrl = [(a['fx'],a['fy']), (b['cp']['fx'],b['cp']['fy']), (z['fx'],z['fy'])]
+    else:
+        ctrl = [(a['fx'],a['fy']), (z['fx'],z['fy'])]
+    ctrl = _bezier_subrange(ctrl, t0, t1)
+    nb = dict(b)
+    nb['pts'] = [{'fx':clamp01(ctrl[0][0]),'fy':clamp01(ctrl[0][1])}, {'fx':clamp01(ctrl[-1][0]),'fy':clamp01(ctrl[-1][1])}]
+    if b.get('type') == 'curve':
+        nb['cp'] = {'fx':clamp01(ctrl[1][0]), 'fy':clamp01(ctrl[1][1])}
+    elif b.get('type') == 'curve3':
+        nb['cp'] = {'fx':clamp01(ctrl[1][0]), 'fy':clamp01(ctrl[1][1])}
+        nb['cp2'] = {'fx':clamp01(ctrl[2][0]), 'fy':clamp01(ctrl[2][1])}
+    return nb
+
+def _clip_braces_to_outline(braces, geo):
+    geo = geo or {}
+    outline, Lx, Ly = geo.get('outline'), geo.get('Lx'), geo.get('Ly')
+    if not outline or not Lx or not Ly:
+        return braces
+    out = []
+    for b in braces:
+        cb = _clip_brace_to_outline(b, outline, Lx, Ly)
+        if cb is not None:
+            out.append(cb)
+    return out
+
 def xbrace_encode(p, geo=None):
     """Fixed X-brace layout taken directly from a real project file the
     user built and exported (not reverse-engineered from a DXF sketch) --
@@ -4326,7 +4433,7 @@ def xbrace_encode(p, geo=None):
     def hb(x1,y1,x2,y2,height,width,**kw):
         x1,y1 = hr(x1,y1); x2,y2 = hr(x2,y2)
         return make_brace(x1,y1,x2,y2,height,width,**kw)
-    return [
+    braces = [
         hb(0.24,0.80,0.24,0.20,th,tw),                      # transverse bar
         hb(0.76,0.09,0.32,0.79,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 1
         hb(0.76,0.91,0.32,0.21,h,w,height_tip=hTip,width_tip=wTip),  # main X arm 2
@@ -4340,6 +4447,7 @@ def xbrace_encode(p, geo=None):
         hb(0.691,0.769,0.86,0.10,eh,ew),                    # extra diagonal 1 -- NOT mirrored (real, deliberate asymmetry)
         hb(0.742,0.853,0.91,0.16,eh,ew),                    # extra diagonal 2 -- same direction, NOT mirrored
     ]
+    return _clip_braces_to_outline(braces, geo)
 XBRACE_BOUNDS = [(6,20),(2,12),(6,20),(3,14),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
 def fan_encode(p, n_braces, geo=None):
@@ -4378,7 +4486,7 @@ def fan_encode(p, n_braces, geo=None):
         ey = huby + math.cos(rad)*lenscale   # transforms hub AND tip consistently
         braces.append(hb(hubx,huby,ex,ey,h,w,height_tip=hTip,width_tip=wTip))
     braces.append(hb(0.90,0.47,0.90,0.53,th*0.7,tw*0.7))   # small tail brace
-    return braces
+    return _clip_braces_to_outline(braces, geo)
 def fan_bounds(n_braces):
     return [(4,20),(2,12),(3,14),(2,10),(3,14),(2,9),(0.12,1.0),(0.12,1.0)]
 
@@ -4405,7 +4513,7 @@ def falcate_encode(p, geo=None):
         if curve_cp is not None: curve_cp = hr(*curve_cp)
         if curve_cp2 is not None: curve_cp2 = hr(*curve_cp2)
         return make_brace(x1,y1,x2,y2,height,width,curve_cp=curve_cp,curve_cp2=curve_cp2,**kw)
-    return [
+    braces = [
         # Main sweep pair -- long, single-bow curves (quadratic, matching
         # the source file's own curve data exactly).
         hb(0.94,0.281,0.258,0.243,h1,w1,curve_cp=(0.795,0.647),height_tip=h1Tip,width_tip=w1Tip),
@@ -4424,6 +4532,7 @@ def falcate_encode(p, geo=None):
         # Small tail brace -- no mirror in the source file; kept asymmetric.
         hb(0.92,0.421,0.888,0.533,h6,w6),
     ]
+    return _clip_braces_to_outline(braces, geo)
 FALCATE_BOUNDS = [(6,20),(2,10),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(0.15,1.0),(0.15,1.0)]
 
 
@@ -4482,6 +4591,29 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         best_cost = objective(best_result, targets, defl_limit_mm, mass_weight)
     return best_x, best_cost, best_result, encode_fn(best_x, geo)
 
+def _outline_symmetry_axis_fy(outline_frac):
+    """Area-weighted centroid fy of the traced outline -- the best single-
+    line proxy for its real bilateral symmetry axis. A hand-traced body
+    isn't necessarily centered at fy=0.5 (the middle of the drawing window
+    itself) -- a lopsided trace should mirror around ITS OWN center, not
+    that fixed constant. Falls back to 0.5 when there's no usable outline
+    yet (nothing traced) or a degenerate one (zero/near-zero area)."""
+    pts = outline_frac or []
+    n = len(pts)
+    if n < 3:
+        return 0.5
+    area2, cy_acc = 0.0, 0.0
+    for i in range(n):
+        x0, y0 = pts[i]['fx'], pts[i]['fy']
+        x1, y1 = pts[(i+1) % n]['fx'], pts[(i+1) % n]['fy']
+        cross = x0*y1 - x1*y0
+        area2 += cross
+        cy_acc += (y0+y1)*cross
+    if abs(area2) < 1e-9:
+        return 0.5
+    cy = cy_acc / (3.0*area2)
+    return min(0.9, max(0.1, cy))
+
 # ── Simulated annealing over a variable-length free brace topology ──────
 async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, max_braces, iters, progress_cb, label, symmetric=True, warm_braces=None, temp_scale=1.0, materials=None, lock_positions=False, max_height=22.0, max_width=12.0, max_length_mm=None):
     """Unconstrained search has no reason to ever land on a left-right
@@ -4490,10 +4622,13 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     mutation essentially never produces one. Real instrument bracing is
     almost always bilaterally symmetric (asymmetric mode shapes change
     the radiation pattern and skew the bass/treble balance), so when
-    symmetric=True the search only ever touches ONE half of the plate
-    (fy < 0.5) and every brace's mirror image is added automatically at
-    evaluation time -- symmetry is guaranteed by construction, not hoped
-    for. max_braces is interpreted as the total (mirrored) count.
+    symmetric=True the search only ever touches ONE side of the traced
+    outline's own symmetry axis (see _outline_symmetry_axis_fy -- NOT
+    always fy=0.5; a lopsided trace mirrors around its own geometric
+    center, not the center of the drawing window) and every brace's
+    mirror image is added automatically at evaluation time -- symmetry is
+    guaranteed by construction, not hoped for. max_braces is interpreted
+    as the total (mirrored) count.
 
     materials, when given, is a list of {'modulus','density'} options the
     search can assign per brace (each new brace gets a random pick, and a
@@ -4522,7 +4657,12 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     the curve-bow safety net below re-clamps every iteration rather
     than trusting a one-time check."""
     half_cap = max(1, max_braces//2) if symmetric else max_braces
-    fy_lo, fy_hi = (0.15, 0.47) if symmetric else (0.15, 0.85)
+    sym_axis = _outline_symmetry_axis_fy((geo or {}).get('outline'))
+    # Same margins as the old fixed (0.15, 0.47) had relative to 0.5 (0.35
+    # far side, 0.03 near the axis) -- just re-centered on the real axis,
+    # so behavior is unchanged for a body that IS centered at fy=0.5.
+    fy_lo = max(0.03, sym_axis - 0.35) if symmetric else 0.15
+    fy_hi = max(fy_lo+0.02, sym_axis - 0.03) if symmetric else 0.85
     min_height, min_width = 4.0, 2.0
     max_height = max(min_height, float(max_height))
     max_width = max(min_width, float(max_width))
@@ -4550,9 +4690,9 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         return dict(random.choice(materials))
 
     def mirror_brace(b):
-        m = dict(b, pts=[{'fx':pp['fx'], 'fy':1.0-pp['fy']} for pp in b['pts']])
-        if b.get('cp'): m['cp'] = {'fx':b['cp']['fx'], 'fy':1.0-b['cp']['fy']}
-        if b.get('cp2'): m['cp2'] = {'fx':b['cp2']['fx'], 'fy':1.0-b['cp2']['fy']}
+        m = dict(b, pts=[{'fx':pp['fx'], 'fy':clamp01(2*sym_axis-pp['fy'])} for pp in b['pts']])
+        if b.get('cp'): m['cp'] = {'fx':b['cp']['fx'], 'fy':clamp01(2*sym_axis-b['cp']['fy'])}
+        if b.get('cp2'): m['cp2'] = {'fx':b['cp2']['fx'], 'fy':clamp01(2*sym_axis-b['cp2']['fy'])}
         return m
     def expand(bl):
         if not symmetric: return bl
