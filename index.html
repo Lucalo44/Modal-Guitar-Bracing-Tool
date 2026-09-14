@@ -2938,7 +2938,11 @@ function getAnim3DState(key){
   return ANIM3D[key];
 }
 const ANIM3D_NEG = [47,143,196];   // matches --accent (sky blue) -- negative deflection
-const ANIM3D_ZERO = [246,252,251]; // near-white, matches canvas.plot's own background
+// Deliberately NOT the same as ensureAnim3DInit's scene.background (0xf6fcfb) --
+// they matched exactly once before, which made near-zero-deflection regions
+// (most of the plate near a clamped/simply-supported edge) blend straight into
+// the background, hiding the outline. Keep this visibly warmer/darker than 0xf6fcfb.
+const ANIM3D_ZERO = [228,219,188]; // pale spruce -- zero deflection
 const ANIM3D_POS = [201,107,58];   // warm terracotta -- positive deflection
 function lerp3(a,b,t){ return [0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*t)); }
 function modeValToColor(v){
@@ -2980,6 +2984,7 @@ function build3DGeometry(key, modeIdx){
   const nx = res.fieldNx, ny = res.fieldNy; // nx=fx/length samples, ny=fy/width samples
   const Lx = GEO.Lx, Ly = GEO.Ly, cx=Lx/2, cy=Ly/2;
   const outlineSpline = GEO.outlinePts.length>=3 ? catmullRomSpline(GEO.outlinePts, true, 200) : null;
+  const holeR = GEO.holeR>0.001 ? GEO.holeR*Math.min(Lx,Ly) : 0; // fraction of min(Lx,Ly) -- see build_grid
   const positions = new Float32Array(nx*ny*3);
   const colors = new Float32Array(nx*ny*3);
   const valid = new Uint8Array(nx*ny);
@@ -2995,7 +3000,10 @@ function build3DGeometry(key, modeIdx){
       // every other canvas here.
       positions[idx*3]=fx*Lx-cx; positions[idx*3+1]=fy*Ly-cy; positions[idx*3+2]=0;
       rawZ[idx]=v;
-      valid[idx] = (!outlineSpline || pointInPolyFrac(fx,fy,outlineSpline)) ? 1:0;
+      // Masking only the outer outline still paints straight over the sound
+      // hole -- both checks are required.
+      const inHole = holeR>0 && Math.hypot((fx-GEO.holeCx)*Lx, (fy-GEO.holeCy)*Ly) < holeR;
+      valid[idx] = ((!outlineSpline || pointInPolyFrac(fx,fy,outlineSpline)) && !inHole) ? 1:0;
       const [r,g,b] = modeValToColor(v);
       colors[idx*3]=r/255; colors[idx*3+1]=g/255; colors[idx*3+2]=b/255;
     }
@@ -3047,6 +3055,48 @@ function build3DBraceLines(key, modeIdx, scene, braceObjs){
     scene.add(line);
     braceObjs.push({line});
   });
+}
+
+// Permanent dark edge lines around the outer body outline and the sound
+// hole, animated to follow the surface exactly like the brace centerlines
+// above. These exist so the plate's boundary is never dependent on the
+// deflection color mapping alone -- a near-zero-deflection region (common
+// along a clamped/simply-supported edge) can render close enough to
+// ANIM3D_ZERO/the scene background to be hard to make out by color alone.
+function build3DBoundaryLines(key, modeIdx, scene, braceObjs){
+  const res = GEN.results[key];
+  const field = res.fieldShapes[modeIdx];
+  const nx = res.fieldNx, ny = res.fieldNy;
+  const Lx = GEO.Lx, Ly = GEO.Ly, cx=Lx/2, cy=Ly/2;
+  const mat = new THREE.LineBasicMaterial({color:new THREE.Color('#2e2a24'), linewidth:2});
+  function addLoop(fxfyPts){
+    const N = fxfyPts.length;
+    const positions = new Float32Array(N*3);
+    const rawZ = new Float32Array(N);
+    fxfyPts.forEach(([fx,fy],s)=>{
+      positions[s*3]=fx*Lx-cx; positions[s*3+1]=fy*Ly-cy; positions[s*3+2]=0;
+      rawZ[s]=sampleField3D(field,nx,ny,fx,fy);
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    geo._rawZ = rawZ;
+    const line = new THREE.LineLoop(geo, mat);
+    line.renderOrder=2;
+    scene.add(line);
+    braceObjs.push({line});
+  }
+  if(GEO.outlinePts.length>=3){
+    addLoop(catmullRomSpline(GEO.outlinePts, true, 160).map(p=>[p.fx,p.fy]));
+  }
+  if(GEO.holeR>0.001){
+    const rM = GEO.holeR*Math.min(Lx,Ly); // fraction of min(Lx,Ly) -- see build_grid
+    const pts=[];
+    for(let s=0;s<48;s++){
+      const th = s/48*Math.PI*2;
+      pts.push([GEO.holeCx + Math.cos(th)*rM/Lx, GEO.holeCy + Math.sin(th)*rM/Ly]);
+    }
+    addLoop(pts);
+  }
 }
 
 function ensureAnim3DInit(key){
@@ -3103,6 +3153,7 @@ function select3DMode(key, modeIdx){
   for(const bo of st.braceObjs){ st.scene.remove(bo.line); bo.line.geometry.dispose(); bo.line.material.dispose(); }
   st.braceObjs = [];
   build3DBraceLines(key, modeIdx, st.scene, st.braceObjs);
+  build3DBoundaryLines(key, modeIdx, st.scene, st.braceObjs);
 }
 function animate3DFrame(key){
   const st = ANIM3D[key]; if(!st || !st.initialized){ return; }
