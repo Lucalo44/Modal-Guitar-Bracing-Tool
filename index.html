@@ -367,6 +367,12 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       </div>
       <div class="sbar-hint">Auto-generate searches for bracing patterns that hit your Targets. Manual Drawing skips search and evaluates brace shape with no targets.</div>
     </div>
+    <div class="sbar-section">
+      <div class="sbar-title">Brace discretization</div>
+      <div class="param-row"><label>Beam section length <span id="braceSegMmVal">20 mm</span></label>
+        <input type="range" id="braceSegMm" min="5" max="50" step="1" value="20"></div>
+      <div class="sbar-hint">Length of each beam section used to add a brace's mass and bending stiffness into the plate simulation. Shorter = more accurate (especially for tapered or curved braces), longer = faster. Applies to every generated or hand-drawn design.</div>
+    </div>
     <div id="genModeAutoSidebar">
     <div class="sbar-section">
       <div class="sbar-title">Patterns to generate</div>
@@ -2007,8 +2013,12 @@ function buildGeoPayload(GN){
     bcMode: GEO.bcMode, outline: GEO.outlinePts, holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
     bridgeFx: c.fx, bridgeFy: c.fy, loadN: GEO.loadN, bridgeTorqueNmm: GEO.bridgeTorqueNmm, GN,
     bridgePts: GEO.bridgePts, bridgeLenMm: GEO.bridgeLenMm, bridgeDepthMm: GEO.bridgeDepthMm,
+    braceSegMm: +document.getElementById('braceSegMm').value || 20,
   };
 }
+document.getElementById('braceSegMm').addEventListener('input', function(){
+  document.getElementById('braceSegMmVal').textContent = this.value+' mm';
+});
 
 /* ============================================================
    MANUAL BRACE EDITOR — draw braces by hand directly on the traced
@@ -3721,6 +3731,18 @@ def _dim_at(center, tip, t):
     tip = center if tip is None else tip
     return tip + (center - tip) * 4.0 * t * (1.0 - t)
 
+def _brace_ns(b, Lx, Ly, seg_len_mm):
+    """Number of discretization segments for a brace's mass/stiffness
+    sampling, sized so each segment is roughly seg_len_mm long (chord-length
+    approximation -- endpoint-to-endpoint, not the true arc length for a
+    curved brace, but close enough to size the discretization). None or
+    non-positive falls back to the old fixed default of 10."""
+    if not seg_len_mm or seg_len_mm <= 0:
+        return 10
+    a, z = b['pts'][0], b['pts'][1]
+    chord_mm = math.hypot((z['fx']-a['fx'])*Lx, (z['fy']-a['fy'])*Ly) * 1000.0
+    return int(max(4, min(60, round(chord_mm / seg_len_mm))))
+
 def _sample_brace(b, Lx, Ly, NS=10):
     a, z = b['pts'][0], b['pts'][1]
     ax, ay = a['fx'] * Lx, a['fy'] * Ly
@@ -3758,19 +3780,19 @@ def _sample_brace(b, Lx, Ly, NS=10):
         pts.append((x, y, sl, t))
     return pts
 
-def braces_to_masses(braces, Lx, Ly):
+def braces_to_masses(braces, Lx, Ly, seg_len_mm=None):
     xs, ys, ms = [], [], []
     for b in braces:
         wC = b['width']/1000.0; wT = (b['width'] if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b['height']/1000.0; hT = (b['height'] if b.get('heightTip') is None else b['heightTip'])/1000.0
-        for x, y, sl, t in _sample_brace(b, Lx, Ly):
+        for x, y, sl, t in _sample_brace(b, Lx, Ly, _brace_ns(b, Lx, Ly, seg_len_mm)):
             A = _dim_at(wC, wT, t) * _dim_at(hC, hT, t)
             m = b.get('density', 420) * A * sl
             if m > 0:
                 xs.append(min(0.999, max(0.001, x/Lx))*Lx); ys.append(min(0.999, max(0.001, y/Ly))*Ly); ms.append(m)
     return xs, ys, ms
 
-def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, NS=10):
+def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None):
     node_local = np.stack([grid['nodes_i']*grid['dd'], grid['nodes_j']*grid['dd']], axis=1)
     tree = cKDTree(node_local)
     rows, cols, vals = [], [], []
@@ -3779,7 +3801,7 @@ def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, NS=10):
         wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
         modulus = b.get('modulus', 10e9)
-        pts = _sample_brace(b, Lx, Ly, NS)
+        pts = _sample_brace(b, Lx, Ly, _brace_ns(b, Lx, Ly, seg_len_mm))
         xy = np.array([[p[0]-grid['bbx0'], p[1]-grid['bby0']] for p in pts])
         _, idxs = tree.query(xy)
         for k in range(1, len(pts)-1):
@@ -3959,10 +3981,11 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     geom_penalty = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
     geom_penalty += brace_overlap_penalty(braces, Lx, Ly)
 
-    mx, my, mm = braces_to_masses(braces, Lx, Ly)
+    seg_len_mm = geo.get('braceSegMm')
+    mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
     braceM = _map_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
-    K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid)
+    K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm)
     # Three separate directional terms, each squared for guaranteed
     # positive-semi-definiteness (same principle the old single-operator
     # isotropic solver relied on, just applied to three simpler
