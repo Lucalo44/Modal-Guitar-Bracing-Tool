@@ -2521,6 +2521,7 @@ document.getElementById('manualSendToOptimizerBtn').onclick = ()=>{
   ['genXBrace','genFan','genFalcate','genNovel','genNovelExperimental'].forEach(id=>{ document.getElementById(id).checked = false; });
   document.getElementById('genCustom').checked = true;
   document.getElementById('customPatternSettings').style.display = 'block';
+  document.getElementById('customLockPositions').checked = true;
   document.getElementById('seedUploadStatus').textContent = 'Using the design from "Draw manually".';
   genModeSet('auto');
   statusEl.textContent = 'Sent to optimizer — see "Custom" settings on the left, then Generate & compare.'; statusEl.className='status ok';
