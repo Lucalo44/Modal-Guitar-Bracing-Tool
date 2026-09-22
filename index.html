@@ -3951,15 +3951,24 @@ def brace_hole_violation(braces, hole_cx, hole_cy, hole_r, Lx, Ly, NS=14):
     converged result -- once violation reaches zero, no move that's
     accepted can ever push it back above zero -- it just isn't a flat
     reject on every touching state along the way, which would otherwise
-    trap a design that starts bad with no way to gradually move clear."""
+    trap a design that starts bad with no way to gradually move clear.
+
+    The keep-out radius grows by the brace's own local half-width, not
+    just the bare hole radius -- checking the centerline alone lets a WIDE
+    brace's actual edge cut into the hole while its centerline still shows
+    zero violation, which resize mutations (free to grow width without
+    ever moving the centerline) can exploit with nothing else catching it."""
     hx, hy = hole_cx*Lx, hole_cy*Ly
     hr = hole_r*min(Lx, Ly)
     total = 0.0
     for b in braces:
+        wC = b.get('width', 3.0)/1000.0
+        wT = (b.get('width', 3.0) if b.get('widthTip') is None else b['widthTip'])/1000.0
         for x, y, sl, t in _sample_brace(b, Lx, Ly, NS):
+            keepout = hr + _dim_at(wC, wT, t)/2.0
             d = math.hypot(x-hx, y-hy)
-            if d < hr:
-                total += (hr-d)**2
+            if d < keepout:
+                total += (keepout-d)**2
     return total
 
 def brace_geometry_penalty(braces, outline_frac, hole_cx, hole_cy, hole_r, Lx, Ly, NS=14):
@@ -3973,21 +3982,26 @@ def brace_geometry_penalty(braces, outline_frac, hole_cx, hole_cy, hole_r, Lx, L
     poly_phys = [(p['fx']*Lx, p['fy']*Ly) for p in outline_frac]
     hx, hy = hole_cx*Lx, hole_cy*Ly
     hr = hole_r*min(Lx, Ly)
-    hole_margin = hr + 0.004  # ~4mm clearance around the hole rim
     penalty = 0.0
     for b in braces:
-        xs, ys = [], []
+        wC = b.get('width', 3.0)/1000.0
+        wT = (b.get('width', 3.0) if b.get('widthTip') is None else b['widthTip'])/1000.0
+        xs, ys, half_ws = [], [], []
         for x, y, sl, t in _sample_brace(b, Lx, Ly, NS):
-            xs.append(x); ys.append(y)
-        xs_a, ys_a = np.array(xs), np.array(ys)
+            xs.append(x); ys.append(y); half_ws.append(_dim_at(wC, wT, t)/2.0)
+        xs_a, ys_a, half_w_a = np.array(xs), np.array(ys), np.array(half_ws)
         inside = points_in_polygon(xs_a, ys_a, poly_phys)
         n_out = int(np.sum(~inside))
         if n_out:
             penalty += n_out * 180.0
         d_hole = np.hypot(xs_a-hx, ys_a-hy)
+        # Clearance scales with each sample's own local half-width (see
+        # brace_hole_violation) plus the same ~4mm rim allowance as before,
+        # not a flat hr+4mm regardless of how wide the brace actually is.
+        hole_margin = hr + half_w_a + 0.004
         over_hole = np.clip(hole_margin - d_hole, 0, None)
         if np.any(over_hole > 0):
-            penalty += float(np.sum((over_hole/max(hole_margin,1e-6))**2)) * 160.0
+            penalty += float(np.sum((over_hole/np.maximum(hole_margin,1e-6))**2)) * 160.0
     return penalty
 
 def brace_overlap_penalty(braces, Lx, Ly, NS=10):
@@ -4881,9 +4895,28 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         if it % max(1,iters//25) == 0 or it==iters-1:
             progress_cb(label, it, iters, best_cost, best_result)
         await asyncio.sleep(0)
+    def _finalize(bl):
+        # The search above only discourages out-of-bounds material via a
+        # soft cost penalty (brace_geometry_penalty), same as the hole --
+        # it's not a hard reject, so a candidate that pokes past the traced
+        # outline can still win if the rest of its score is good enough,
+        # especially for a lopsided (non-symmetric) outline where the
+        # mirrored half of a brace can land outside even when the searched
+        # half doesn't. Hard-clip the actual returned design the same way
+        # the fixed-topology patterns already are (via De Casteljau Bezier
+        # subdivision, see _clip_braces_to_outline) so what's shown can
+        # never have brace material past the border, then re-score against
+        # the geometry that's actually being returned rather than the
+        # pre-clip one the search explored.
+        full = expand(bl)
+        clipped = _clip_braces_to_outline(full, geo)
+        r = evaluate_design(geo, clipped, n_modes, meas_xy)
+        c = objective(r, targets, defl_limit_mm, mass_weight, n_braces=len(clipped))
+        return clipped, c, r
+
     if best_valid_braces is not None:
-        return expand(best_valid_braces), best_valid_cost, evaluate_design(geo, expand(best_valid_braces), n_modes, meas_xy)
-    return expand(best_braces), best_cost, best_result
+        return _finalize(best_valid_braces)
+    return _finalize(best_braces)
 
 
 # ── Main entry point called from JS ──────────────────────────────────────
