@@ -410,7 +410,8 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     </div>
     <div class="sbar-section" id="multiMaterialSettings" style="display:none">
       <div class="sbar-title">Materials available to this solver</div>
-      <div class="sbar-hint">Preview only — mixed-material search isn't implemented yet. See Documentation.</div>
+      <div class="check-row"><input type="checkbox" id="enableMultiMaterial"><label style="margin:0">Enable mixed-material search</label></div>
+      <div class="sbar-hint">Off: Experimental uses the single "Brace material" set below, same as every other pattern. On: each brace in Experimental is independently assigned one of the materials below as a real search variable, not just previewed. See Documentation.</div>
       <table style="width:100%; margin-top:10px; border-collapse:collapse; font-size:11px; color:var(--text)">
         <thead>
           <tr style="color:var(--dim); font-size:9.5px; text-transform:uppercase; letter-spacing:.08em">
@@ -766,12 +767,15 @@ document.getElementById('helpBtn').onclick = ()=>{
   if checked. <b>Lock brace positions</b> restricts its search to cross-section dimensions only — no brace is added,
   removed, moved, or bent, so the exact layout you drew stays exactly where it was; turn this on when the layout itself is
   already deliberate and only the sizing should be tuned.</p>
-  <p><b>Experimental's materials palette</b> (spruce/carbon fiber properties, editable) is currently a preview —
-  every brace in every pattern, including Experimental, still uses the single "Brace material" set above it. Once
-  mixed-material search is implemented, Experimental will be able to assign each brace its own material from this palette.
-  Carbon fiber's default values (E≈135 GPa, ρ≈1600 kg/m³) are for a real unidirectional structural composite along the
-  fiber direction — a different, much stiffer material than the "carbon-fiber reinforced" preset in the Brace material
-  dropdown below, which represents a wood/CF hybrid laminate at a lower effective stiffness.</p>
+  <p><b>Experimental's materials palette</b> (spruce/carbon fiber properties, editable) only takes effect with
+  "Enable mixed-material search" checked. Off (the default), Experimental uses the single "Brace material" set above it,
+  same as every other pattern. On, each brace in Experimental is independently assigned one of the two materials below as
+  a real search variable — a mutation can flip any brace to the other material, same as it can reposition or resize one —
+  so the final design can genuinely mix materials where that helps. Still Experimental-only: plain "Novel" always keeps a
+  single global material regardless of this toggle. Carbon fiber's default values (E≈135 GPa, ρ≈1600 kg/m³) are for a real
+  unidirectional structural composite along the fiber direction — a different, much stiffer material than the
+  "carbon-fiber reinforced" preset in the Brace material dropdown below, which represents a wood/CF hybrid laminate at a
+  lower effective stiffness.</p>
   <p><b>Polish at full resolution</b> re-optimizes each coarse winner with a short additional search at hi-fi resolution
   before showing it, since a design that's near-optimal on the coarse search grid isn't guaranteed to still be optimal on
   a finer one. Turning it off shows the coarse-search result as-is (still re-measured, just not re-optimized). </p>
@@ -2594,6 +2598,7 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
     displayGN: +document.getElementById('finalDisplayGN').value,
     braceModulus: +document.getElementById('braceE').value*1e9,
     braceDensity: +document.getElementById('braceRho').value,
+    enableMultiMaterial: document.getElementById('enableMultiMaterial').checked,
     expMatSpruceE: +document.getElementById('matSpruceE').value*1e9,
     expMatSpruceRho: +document.getElementById('matSpruceRho').value,
     expMatCarbonE: +document.getElementById('matCarbonE').value*1e9,
@@ -4958,10 +4963,14 @@ async def run_all_patterns(payload_json):
         # request that plain Novel keep using a single material like every
         # other pattern. Two options for now (spruce, carbon fiber); the
         # UI's materials table is the source of truth for their properties.
+        # Gated behind its own toggle (default off) -- it was previously
+        # always wired up whenever Experimental was selected despite the
+        # UI calling it "preview only, not implemented," which left no way
+        # to actually opt in or out independent of the pattern itself.
         exp_materials = [
             {'modulus': float(p.get('expMatSpruceE', 10e9)), 'density': float(p.get('expMatSpruceRho', 420.0))},
             {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0))},
-        ]
+        ] if p.get('enableMultiMaterial', False) else None
         # A design uploaded or picked from the current session, used ONLY
         # by the "custom" pattern below -- it does not feed into or alter
         # "novel" or "novelExperimental" in any way; those always start
