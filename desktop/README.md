@@ -12,7 +12,7 @@ This build fixes that specific thing: `engine.py` adds `run_all_patterns_paralle
 
 ## What's here
 
-- `engine.py` — the physics/optimizer engine, copied from index.html's embedded `<script type="py">` block, with Pyodide's `js`/`pyscript.ffi` glue replaced by a plain-Python `BRIDGE` callback table (`set_bridge(...)`), plus the new `run_all_patterns_parallel` / `_solve_pattern_async` / `_solve_pattern_sync` for multiprocess dispatch.
+- `engine.py` — the physics/optimizer engine, copied from index.html's embedded `<script type="py">` block, with Pyodide's `js`/`pyscript.ffi` glue replaced by a plain-Python `BRIDGE` callback table (`set_bridge(...)`), plus the new `run_all_patterns_parallel` / `_solve_pattern_async` / `_solve_pattern_sync` for multiprocess dispatch. Each worker process streams live search progress back through a `multiprocessing.Manager().Queue()`, drained continuously by a background thread, so the progress bar/log move in real time during the search rather than only jumping when a whole pattern finishes.
 - `app.py` — the pywebview host. Exposes `run_all_patterns`, `evaluate_manual_design`, `compute_bare_modes`, `cancel_optimizer` to the page as `window.pywebview.api.*`, and relays engine callbacks back into the page via `window.evaluate_js(...)`, calling the exact same `onOptimizerProgress`/`onOptimizerDone`/`onOptimizerError`/`onManualEvalDone`/`onManualEvalError`/`onBareModesResult`/`onBareModesError`/`onPyEngineReady` handlers the browser build already defines.
 - `ui/index.html` — a copy of `../index.html` with the PyScript bootstrap tags and the embedded Python engine block removed, and the 4 call sites that used to call into Pyodide (`window.pyRunAllPatterns`, `window.pyEvaluateManualDesign`, `window.pyComputeBareModes`, `window.pyCancelOptimizer`) pointed at `window.pywebview.api.*` instead. Nothing else in the file was touched.
 
@@ -32,14 +32,15 @@ This opens a native window hosting the UI. "Engine ready" should appear almost i
 Verified directly (standalone tests against `engine.py`, not through the actual GUI — see caveat below):
 - The engine imports and runs correctly natively (sequential path produces identical results to the browser build's logic).
 - `run_all_patterns_parallel` genuinely runs patterns concurrently across processes, with a real, measured speedup.
-- Cancel correctly propagates into running worker processes and stops them.
+- Cancel correctly propagates into running worker processes and stops them (~1.6s from Stop to fully halted, including a 5000-iteration run).
+- Progress streams live: first update lands ~0.4s after starting (vs. only at full completion before), with continuous updates throughout — confirmed with 100+ progress events over a 21s run.
 
 **Not yet verified: the actual GUI.** I could not launch and click through the pywebview window itself in this environment — only the engine and orchestration layer were tested directly (as a library, not through the UI). Before relying on this, actually run `python app.py` and go through a full workflow (trace outline → set targets → generate & compare → results) yourself.
 
 Known rough edges to watch for, inherited from swapping WKWebView (macOS's native webview, which is what pywebview uses here) in for a full Chromium browser:
 - **Folder import for measured data** uses the File System Access API (`showDirectoryPicker`) with an existing fallback to a plain `<input webkitdirectory>` picker when that API isn't available. WKWebView doesn't support `showDirectoryPicker`, so it should automatically take the fallback path — untested in the actual window.
 - **3D mode-shape video export** uses `canvas.captureStream()` + `MediaRecorder`. Both are commonly available in WKWebView, but this specific combination wasn't exercised here.
-- **Progress reporting during "Generate & compare" is coarser** than the browser build in parallel mode: instead of a live per-iteration progress bar per pattern, you'll see each pattern's progress bar jump straight to 100% as that pattern's process finishes, since streaming per-iteration progress across a process boundary needs its own IPC channel that wasn't built for this first pass. `run_all_patterns` (plain sequential, same as the browser build) is still in `engine.py` if you want the old fine-grained behavior — `app.py` just doesn't call it.
+- **The progress bar can jump between patterns** during "Generate & compare": progress now streams live (see above), but since patterns run concurrently instead of strictly one after another, their updates interleave on the UI's single shared progress bar/log — e.g. a bar at 80% for one pattern can visibly drop back down when another pattern's update arrives. This is a real side effect of actual parallelism (the sequential browser build never had concurrent patterns to interleave), not a bug, but a per-pattern progress display would be a cleaner fix if this is annoying in practice.
 
 ## Packaging into a real installable app
 

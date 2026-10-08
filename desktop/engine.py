@@ -1789,7 +1789,17 @@ def run_all_patterns_parallel(payload_json):
     requested pattern in its own OS process instead of one after another.
     Synchronous/blocking by design -- app.py calls this from a background
     thread, not from the UI/API thread, so the GUI stays responsive while
-    this blocks waiting on the worker processes."""
+    this blocks waiting on the worker processes.
+
+    Progress streams in real time via a Manager().Queue() shared with every
+    worker: a background thread here drains it continuously and forwards
+    each message straight to onOptimizerProgress, so the browser build's
+    progress bar/log behavior is preserved rather than jumping from 0% to
+    100% only when a whole pattern finishes. Since patterns now run
+    concurrently instead of strictly one after another, their progress
+    messages interleave on the UI's single shared progress bar -- expect it
+    to jump between patterns rather than climb smoothly start to finish,
+    which is a real, new side effect of actual parallelism, not a bug."""
     import concurrent.futures as cf
     import multiprocessing as mp
 
@@ -1803,13 +1813,28 @@ def run_all_patterns_parallel(payload_json):
         CANCEL_FLAG['stop'] = False
         manager = mp.Manager()
         cancel_event = manager.Event()
+        progress_queue = manager.Queue()
         REQUEST_CANCEL['event'] = cancel_event
+
+        stop_draining = threading.Event()
+        def _drain_progress():
+            while not stop_draining.is_set():
+                try:
+                    msg = progress_queue.get(timeout=0.2)
+                except Exception:
+                    continue
+                try:
+                    BRIDGE['onOptimizerProgress'](*msg)
+                except Exception:
+                    pass
+        drain_thread = threading.Thread(target=_drain_progress, daemon=True)
+        drain_thread.start()
 
         out = {}
         cancelled = False
         max_workers = min(len(patterns), os.cpu_count() or 4)
         with cf.ProcessPoolExecutor(max_workers=max_workers) as ex:
-            futures = {ex.submit(_solve_pattern_sync, key, p, cancel_event): key for key in patterns}
+            futures = {ex.submit(_solve_pattern_sync, key, p, cancel_event, progress_queue): key for key in patterns}
             for fut in cf.as_completed(futures):
                 key = futures[fut]
                 try:
@@ -1824,6 +1849,22 @@ def run_all_patterns_parallel(payload_json):
                                                    result.get('deflBridgeMm'))
                 if cancel_event.is_set():
                     cancelled = True
+
+        # Stop draining only after every worker has actually finished --
+        # the queue can still hold a handful of messages pushed right
+        # before a process exited, and those should still reach the UI.
+        stop_draining.set()
+        drain_thread.join(timeout=1.0)
+        while True:
+            try:
+                msg = progress_queue.get_nowait()
+            except Exception:
+                break
+            try:
+                BRIDGE['onOptimizerProgress'](*msg)
+            except Exception:
+                pass
+
         REQUEST_CANCEL['event'] = None
         BRIDGE['onOptimizerDone'](json.dumps(out), cancelled)
     except Exception as exc:
