@@ -14,6 +14,7 @@ This build fixes that specific thing: `engine.py` adds `run_all_patterns_paralle
 
 - `engine.py` — the physics/optimizer engine, copied from index.html's embedded `<script type="py">` block, with Pyodide's `js`/`pyscript.ffi` glue replaced by a plain-Python `BRIDGE` callback table (`set_bridge(...)`), plus the new `run_all_patterns_parallel` / `_solve_pattern_async` / `_solve_pattern_sync` for multiprocess dispatch. Each worker process streams live search progress back through a `multiprocessing.Manager().Queue()`, drained continuously by a background thread, so the progress bar/log move in real time during the search rather than only jumping when a whole pattern finishes.
 - `app.py` — the pywebview host. Exposes `run_all_patterns`, `evaluate_manual_design`, `compute_bare_modes`, `cancel_optimizer` to the page as `window.pywebview.api.*`, and relays engine callbacks back into the page via `window.evaluate_js(...)`, calling the exact same `onOptimizerProgress`/`onOptimizerDone`/`onOptimizerError`/`onManualEvalDone`/`onManualEvalError`/`onBareModesResult`/`onBareModesError`/`onPyEngineReady` handlers the browser build already defines.
+- `cad_export.py` — STEP export for solved designs (desktop only): the top plate and the braces (fused per material, trimmed to the plate) as named B-rep solids in mm, via OpenCascade (`cadquery-ocp`). Called from `app.py`'s `export_step`, which also writes the page's simulation-info JSON next to the `.step` file. `app.py`'s `save_file` gives every other export (STL, project JSON, video) a native Save dialog, since the webview ignores browser-style downloads.
 - `ui/index.html` — a copy of `../index.html` with the PyScript bootstrap tags and the embedded Python engine block removed, and the 4 call sites that used to call into Pyodide (`window.pyRunAllPatterns`, `window.pyEvaluateManualDesign`, `window.pyComputeBareModes`, `window.pyCancelOptimizer`) pointed at `window.pywebview.api.*` instead. Nothing else in the file was touched.
 
 ## Running it
@@ -24,6 +25,8 @@ python3 -m venv .venv && source .venv/bin/activate   # optional but recommended
 pip install -r requirements.txt
 python app.py
 ```
+
+`cadquery-ocp` (about 65 MB, the OpenCascade CAD kernel) is only used for STEP export; if it's missing the app still runs and the STEP button explains how to install it.
 
 This opens a native window hosting the UI. "Engine ready" should appear almost immediately (there's no WASM/numpy/scipy download — it's already running natively).
 

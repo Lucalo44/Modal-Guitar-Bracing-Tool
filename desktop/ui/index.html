@@ -83,6 +83,13 @@ header { position: sticky; top: 0; z-index: 50; height: var(--hdr); display: fle
 }
 .color-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent), 0 1px 2px rgba(30,60,50,.3); }
 .sbar-title { font-family: var(--stencil); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 9px; }
+.sbar-section.collapsible > .sbar-title { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.sbar-section.collapsible > .sbar-title:hover { color: var(--text); }
+.sbar-section.collapsible > .sbar-title::before { content: '▾'; font-size: 11px; transition: transform .15s; }
+.sbar-section.collapsible.collapsed > .sbar-title { margin-bottom: 0; }
+.sbar-section.collapsible.collapsed > .sbar-title::before { transform: rotate(-90deg); }
+.sbar-section.collapsible.collapsed > :not(.sbar-title) { display: none !important; }
+.sbar-section.collapsible.collapsed { flex: none !important; }
 .sbar-hint { font-size: 10.5px; color: var(--dim); line-height: 1.5; margin-top: 5px; }
 
 .main-area { flex: 1; position: relative; overflow: auto; background: transparent; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
@@ -125,6 +132,17 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .status.err { border-color: var(--danger); color: #a8503e; background: rgba(251,229,224,.75); }
 .status.warn { border-color: var(--gold); color: #a1791f; background: rgba(250,236,205,.75); }
 
+.anneal-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.anneal-head .anneal-title { font-weight:600; color:var(--text); }
+.anneal-head select { margin:0 0 0 auto; width:auto; }
+.anneal-grid { display:grid; grid-template-columns: 1fr 1fr 0.8fr; gap:12px; }
+.anneal-sub { font-size:11px; color:var(--muted); margin-bottom:4px; }
+.anneal-plot-head { display:flex; align-items:center; gap:6px; }
+.anneal-save { margin-left:auto; flex-shrink:0; font-size:10px; padding:2px 8px; border-radius:6px; border:1px solid var(--border2); background:var(--bg4); color:var(--text); cursor:pointer; }
+.anneal-save:hover { background:#ffffff; }
+.anneal-head .anneal-save { margin-left:0; }
+.anneal-grid canvas { width:100%; height:240px; display:block; background:#ffffff; border:1px solid var(--border2); border-radius:6px; }
+@media (max-width: 1100px) { .anneal-grid { grid-template-columns: 1fr; } }
 .card { background: var(--bg3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 16px; padding: 14px; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 3px 10px rgba(40,90,80,.12); }
 .card-title { font-family: var(--wood); font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
 
@@ -200,7 +218,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
 <!-- ══════════════ PANEL 2 — EXTRACT MODES ══════════════ -->
 <div class="panel" id="panelModes">
   <div class="sidebar">
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Import measured data <span class="pill">optional</span></div>
       <button class="btn primary" id="pickFolderBtn">📁 Select data folder…</button>
       <button class="btn" id="pickFolderFallbackBtn">📁 Select data folder (compatibility mode)…</button>
@@ -208,11 +226,11 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="sbar-hint">Only needed if you have real measured data to match. Skip straight to the target table below to design freely, or go straight to the Braces tab to draw a bracing pattern by hand with no targets at all.</div>
       <div class="status" id="folderStatus">No folder selected.</div>
     </div>
-    <div class="sbar-section" id="runListSection" style="display:none">
+    <div class="sbar-section" data-open id="runListSection" style="display:none">
       <div class="sbar-title">Runs found</div>
       <div id="runList"></div>
     </div>
-    <div class="sbar-section" id="nodeStencilSection" style="display:none">
+    <div class="sbar-section" data-open id="nodeStencilSection" style="display:none">
       <div class="sbar-title">Node stencil</div>
       <div class="sbar-hint">Maps hammer position labels to physical (x,y) mm. Check/edit the table after loading.</div>
       <button class="btn" id="pickStencilBtn">Browse stencil JSON…</button>
@@ -232,7 +250,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <button class="btn primary" id="detectPeaksBtn">Detect peaks</button>
       <div class="sbar-hint">Click directly on the plot to add a peak by hand, or click a marker to remove it.</div>
     </div>
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Already know the frequency?</div>
       <div class="param-row inline"><label>Add target (Hz)</label><input type="number" id="quickAddHz" placeholder="e.g. 148.4" style="width:80px"></div>
       <button class="btn" id="quickAddBtn">+ Add as target mode</button>
@@ -278,7 +296,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
 <!-- ══════════════ PANEL 3 — PLATE & LOAD ══════════════ -->
 <div class="panel active" id="panelGeo">
   <div class="sidebar">
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Outline preset</div>
       <select id="outlinePreset">
         <option value="custom">Custom (trace at right)</option>
@@ -290,7 +308,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Body width Ly (mm)</label><input type="number" id="geoLy" value="394"></div>
       <div class="param-row inline"><label>Thickness (mm)</label><input type="number" id="geoH" value="2.8"></div>
     </div>
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Trace shapes</div>
       <div class="sbar-hint">Left-click to add/drag a point on selected shape; right-click removes the nearest point.</div>
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="traceOutlineBtn">● Outline</button><button class="btn" id="traceHoleBtn">○ Sound hole</button><button class="btn" id="traceBridgeBtn">▱ Bridge</button></div>
@@ -357,7 +375,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
 <!-- ══════════════ PANEL 4 — GENERATE BRACING ══════════════ -->
 <div class="panel" id="panelGen">
   <div class="sidebar">
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">How do you want braces?</div>
       <div class="btn-row">
         <button class="btn primary" id="genModeAutoBtn" style="margin:0">🔍 Auto-generate</button>
@@ -367,12 +385,12 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Brace discretization</div>
-      <div class="param-row"><label>Beam section length <span id="braceSegMmVal">20 mm</span></label>
-        <input type="range" id="braceSegMm" min="5" max="50" step="1" value="20"></div>
-      <div class="sbar-hint">Length of each beam section used to add a brace's mass and bending stiffness into the plate simulation. Shorter = more accurate (especially for tapered or curved braces), longer = faster. Applies to every generated or hand-drawn design.</div>
+      <div class="param-row"><label>Mass &amp; taper sampling <span id="braceSegMmVal">10 mm</span></label>
+        <input type="range" id="braceSegMm" min="1" max="10" step="1" value="10"></div>
+      <div class="sbar-hint">Spacing of the points used to spread each brace's mass and taper onto the plate. Bending stiffness is always evaluated at the plate grid's own spacing, so this setting changes results only slightly; shorter is a little more accurate for tapered or curved braces. Applies to every generated or hand-drawn design.</div>
     </div>
     <div id="genModeAutoSidebar">
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Patterns to generate</div>
       <div class="check-row"><input type="checkbox" id="genXBrace" checked><label style="margin:0">X-brace</label></div>
       <div class="check-row"><input type="checkbox" id="genFan" checked><label style="margin:0">Fan bracing</label></div>
@@ -433,7 +451,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       </table>
       <div class="sbar-hint">Not the same as "carbon-fiber reinforced" below — see Documentation.</div>
     </div>
-    <div class="sbar-section" id="customPatternSettings" style="display:none">
+    <div class="sbar-section" data-open id="customPatternSettings" style="display:none">
       <div class="sbar-title">Custom — design to optimize</div>
       <div class="sbar-hint">Doesn't affect "Novel" or "Experimental" — see Documentation.</div>
       <button class="btn" id="seedUploadBtn" style="width:100%; margin-top:8px">Choose file…</button>
@@ -468,7 +486,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
       <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
     </div>
-    <div class="sbar-section">
+    <div class="sbar-section" data-open>
       <div class="sbar-title">Optimizer</div>
       <div class="param-row inline"><label>Search grid resolution</label><input type="number" id="optGN" value="34" min="14" max="40"></div>
       <div class="param-row inline"><label>Iterations per pattern</label><input type="number" id="optIters" value="900" min="100" max="4000"></div>
@@ -486,7 +504,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     </div>
     </div>
     <div id="genModeManualSidebar" style="display:none">
-      <div class="sbar-section">
+      <div class="sbar-section" data-open>
         <div class="sbar-title">Tool</div>
         <div class="btn-row">
           <button class="btn" id="manualToolSelect" style="margin:0">↖ Select</button>
@@ -499,7 +517,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <div class="sbar-title">Brace color</div>
         <div class="color-row" id="manualColorRow"></div>
       </div>
-      <div class="sbar-section">
+      <div class="sbar-section" data-open>
         <div class="sbar-title" id="manualPropHeader">No brace selected — sets defaults for the next brace you draw</div>
         <div class="param-row"><label>Height <span id="manualHeightVal">12 mm</span></label>
           <input type="range" id="manualHeight" min="3" max="30" step="0.5" value="12"></div>
@@ -518,7 +536,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <input type="range" id="manualBraceRho" min="100" max="1700" step="10" value="420"></div>
         <button class="btn danger" id="manualDeleteBraceBtn" style="margin-top:6px; display:none">✕ Delete selected brace</button>
       </div>
-      <div class="sbar-section" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+      <div class="sbar-section" data-open style="flex:1; display:flex; flex-direction:column; min-height:0;">
         <div class="sbar-title">Brace list (<span id="manualBraceCount">0</span>)</div>
         <div class="brace-list" id="manualBraceList"></div>
       </div>
@@ -538,6 +556,20 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     </div>
   </div>
   <div class="main-area" id="genMainAuto">
+    <div class="card" id="annealViz">
+      <div class="anneal-head">
+        <span class="anneal-title">Live annealing</span>
+        <span class="anneal-sub" id="annealStageLabel" style="margin:0">Run "Generate &amp; compare" to watch the search.</span>
+        <span class="anneal-sub" id="annealSaveNote" style="margin:0 0 0 auto"></span>
+        <select id="annealPatternSel" title="Pattern shown in the middle and right views" style="margin-left:0"></select>
+        <button class="anneal-save" id="annealCsvBtn" title="Every sample behind these plots: best and current cost and temperature, per pattern and iteration">⬇ Data (CSV)</button>
+      </div>
+      <div class="anneal-grid">
+        <div><div class="anneal-sub anneal-plot-head"><span>Best cost by pattern (log scale; dashed line = polish starts)</span><button class="anneal-save" data-anneal-png="annealCostCanvas" data-name="best_cost_by_pattern">⬇ PNG</button></div><canvas id="annealCostCanvas"></canvas></div>
+        <div><div class="anneal-sub anneal-plot-head"><span>Current vs best cost, with temperature (right axis)</span><button class="anneal-save" data-anneal-png="annealTempCanvas" data-name="cost_and_temperature">⬇ PNG</button></div><canvas id="annealTempCanvas"></canvas></div>
+        <div><div class="anneal-sub anneal-plot-head"><span>Best design so far</span><button class="anneal-save" data-anneal-png="annealDesignCanvas" data-name="best_design">⬇ PNG</button></div><canvas id="annealDesignCanvas"></canvas></div>
+      </div>
+    </div>
     <div id="genLog" class="card" style="font-family:'Courier New',monospace; font-size:11px; max-height:400px; overflow-y:auto; white-space:pre-wrap; color:var(--muted)"></div>
     <div class="confirm-bar">
       <span class="msg" id="confirmMsg_panelGen">Run "Generate & compare" above to produce at least one result.</span>
@@ -628,6 +660,21 @@ const PATTERN_META = {
   novelExperimental: { label:'Experimental', color:'#d9853a' },
   custom:  { label:'Custom (from your design)', color:'#1f7fa8' },
 };
+
+/* ============================================================
+   COLLAPSIBLE SIDEBAR SECTIONS
+   Every titled sidebar section toggles open/closed from its title. Only
+   sections marked data-open (what a step actually needs) start open.
+   ============================================================ */
+document.querySelectorAll('.sidebar .sbar-section').forEach(sec=>{
+  const title = sec.querySelector(':scope > .sbar-title'); if(!title) return;
+  sec.classList.add('collapsible');
+  const set = open=>{ sec.classList.toggle('collapsed', !open); title.setAttribute('aria-expanded', open); };
+  set(sec.hasAttribute('data-open'));
+  title.setAttribute('role', 'button'); title.tabIndex = 0;
+  title.addEventListener('click', ()=> set(sec.classList.contains('collapsed')));
+  title.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); title.click(); } });
+});
 
 /* ============================================================
    TAB SWITCHING
@@ -1964,6 +2011,200 @@ window.onOptimizerProgress = (label, it, iters, bestCost, freqsJson, deflMm)=>{
   const freqs = JSON.parse(freqsJson).map(f=>f.toFixed(1)).join(', ');
   appendLog(`[${label}] ${it}/${iters}  best_cost=${bestCost.toFixed(2)}  freqs=[${freqs}]  defl=${deflMm!=null?deflMm.toFixed(3)+'mm':'—'}`);
 };
+/* ============================================================
+   LIVE ANNEALING VIEW
+   Fed by onOptimizerTrace, which both annealing loops call ~150 times per
+   stage with (current cost, best cost, temperature, best layout so far).
+   A pattern's "-polish" stage is appended after its coarse search on the
+   same x-axis; its costs come from the finer hi-fi grid, so a step at the
+   dashed line is the grid change, not the search getting worse.
+   ============================================================ */
+const ANNEAL = { series:{}, selected:null, rafPending:false, exportScale:0 };
+function annealScale(){ return ANNEAL.exportScale || window.devicePixelRatio || 1; }
+function resetAnnealViz(){
+  ANNEAL.series = {}; ANNEAL.selected = null;
+  document.getElementById('annealPatternSel').innerHTML = '';
+  document.getElementById('annealStageLabel').textContent = 'Waiting for the first samples…';
+  annealNote('');
+  scheduleAnnealDraw();
+}
+window.onOptimizerTrace = (label, it, iters, bestCost, curCost, T, bracesJson)=>{
+  const polish = label.endsWith('-polish');
+  const key = polish ? label.slice(0, -'-polish'.length) : label;
+  let s = ANNEAL.series[key];
+  if(!s){
+    s = ANNEAL.series[key] = { pts:[], coarseIters:null, polishStart:null, braces:null, stage:'' };
+    const opt = document.createElement('option');
+    opt.value = key; opt.textContent = (PATTERN_META[key]||{label:key}).label;
+    document.getElementById('annealPatternSel').appendChild(opt);
+    if(!ANNEAL.selected){ ANNEAL.selected = key; document.getElementById('annealPatternSel').value = key; }
+  }
+  let x;
+  if(polish){
+    if(s.polishStart == null) s.polishStart = s.coarseIters != null ? s.coarseIters : (s.pts.length ? s.pts[s.pts.length-1].x+1 : 0);
+    x = s.polishStart + it;
+  } else {
+    s.coarseIters = iters; x = it;
+  }
+  // 1e18 is the engine's "nothing evaluated yet" sentinel.
+  s.pts.push({ x, best: bestCost < 1e17 ? bestCost : null, cur: curCost < 1e17 ? curCost : null, T, stage: polish ? 'polish' : 'search', it });
+  s.braces = JSON.parse(bracesJson);
+  s.stage = `${polish ? 'polish' : 'search'} ${it+1}/${iters}`;
+  scheduleAnnealDraw();
+};
+document.getElementById('annealPatternSel').onchange = e=>{ ANNEAL.selected = e.target.value; scheduleAnnealDraw(); };
+function annealNote(msg, cls){
+  const el = document.getElementById('annealSaveNote');
+  el.textContent = msg || '';
+  el.style.color = {ok:'#2f855a', warn:'#b7791f', err:'#c0392b'}[cls] || '';
+}
+function annealFileBase(){
+  return ((document.getElementById('projectNameInput').value || 'bracing').trim()+'_annealing').replace(/[^a-z0-9\-_ ]+/gi, ' ').trim().replace(/\s+/g, '_');
+}
+// PNG of one plot, re-rendered at 3x for a sharp image, then redrawn at screen resolution.
+async function saveAnnealPlot(id, name){
+  if(!Object.keys(ANNEAL.series).length){ annealNote('Nothing to save yet; run the optimizer first.', 'warn'); return; }
+  const cvs = document.getElementById(id);
+  const which = id === 'annealCostCanvas' ? 'all_patterns' : ANNEAL.selected;
+  try{
+    // Encoded synchronously, so the 3x render can't be redrawn underneath it.
+    let png;
+    ANNEAL.exportScale = 3; drawAnnealViz();
+    try{ png = atob(cvs.toDataURL('image/png').split(',')[1]); }
+    finally{ ANNEAL.exportScale = 0; drawAnnealViz(); }
+    const bytes = new Uint8Array(png.length);
+    for(let i=0;i<png.length;i++) bytes[i] = png.charCodeAt(i);
+    const blob = new Blob([bytes], {type:'image/png'});
+    const saved = await saveBlob(`${annealFileBase()}_${name}_${which}.png`, blob);
+    annealNote(saved ? 'Plot saved.' : 'Save cancelled.', saved ? 'ok' : 'warn');
+  } catch(err){ annealNote('Could not save plot: '+err.message, 'err'); }
+}
+async function saveAnnealCSV(){
+  const keys = Object.keys(ANNEAL.series);
+  if(!keys.length){ annealNote('Nothing to save yet; run the optimizer first.', 'warn'); return; }
+  const rows = ['pattern,stage,stage_iteration,plot_iteration,best_cost,current_cost,temperature'];
+  keys.forEach(k=> ANNEAL.series[k].pts.forEach(p=>
+    rows.push([k, p.stage, p.it, p.x, p.best ?? '', p.cur ?? '', p.T].join(','))));
+  try{
+    const saved = await saveBlob(annealFileBase()+'_data.csv', new Blob([rows.join('\n')+'\n'], {type:'text/csv'}));
+    annealNote(saved ? 'Data saved.' : 'Save cancelled.', saved ? 'ok' : 'warn');
+  } catch(err){ annealNote('Could not save data: '+err.message, 'err'); }
+}
+document.querySelectorAll('[data-anneal-png]').forEach(btn=>{ btn.onclick = ()=> saveAnnealPlot(btn.dataset.annealPng, btn.dataset.name); });
+document.getElementById('annealCsvBtn').onclick = saveAnnealCSV;
+function scheduleAnnealDraw(){
+  if(ANNEAL.rafPending) return;
+  ANNEAL.rafPending = true;
+  requestAnimationFrame(()=>{ ANNEAL.rafPending = false; drawAnnealViz(); });
+}
+if(window.ResizeObserver) new ResizeObserver(()=> scheduleAnnealDraw()).observe(document.getElementById('annealViz'));
+
+// Shared axes for the two line charts: log-scale cost on the left, optional
+// linear temperature on the right. Returns pixel mappers.
+function annealAxes(ctx, W, H, xMax, cMin, cMax, tMax){
+  const pad = { l:58, r: tMax ? 40 : 10, t:10, b:22 };
+  const lo = Math.floor(Math.log10(cMin)), hi = Math.max(lo+1, Math.ceil(Math.log10(cMax)));
+  const X = x => pad.l + (W-pad.l-pad.r) * x / Math.max(1, xMax);
+  const Y = c => H-pad.b - (H-pad.t-pad.b) * (Math.log10(Math.max(c, cMin)) - lo) / (hi - lo);
+  const YT = t => H-pad.b - (H-pad.t-pad.b) * t / tMax;
+  ctx.font = '10px sans-serif'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(80,130,110,0.18)'; ctx.fillStyle = '#4d6b64';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const step = Math.max(1, Math.ceil((hi-lo)/5));
+  for(let e=lo; e<=hi; e+=step){
+    const y = Y(Math.pow(10, e));
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W-pad.r, y); ctx.stroke();
+    ctx.fillText(e >= -2 && e <= 3 ? String(+Math.pow(10, e).toPrecision(1)) : `1e${e}`, pad.l-4, y);
+  }
+  ctx.save(); ctx.translate(10, (pad.t + H-pad.b)/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('cost (log scale)', 0, 0); ctx.restore();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('0', X(0), H-pad.b+4); ctx.fillText(String(xMax), X(xMax), H-pad.b+4);
+  ctx.fillText('iteration', (pad.l + W-pad.r)/2, H-pad.b+4);
+  if(tMax){
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c96b3a';
+    ctx.fillText(tMax.toPrecision(2), W-pad.r+4, YT(tMax)); ctx.fillText('0', W-pad.r+4, YT(0));
+    ctx.save(); ctx.translate(W-6, H/2); ctx.rotate(-Math.PI/2); ctx.textAlign='center'; ctx.fillText('temperature', 0, 0); ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(80,130,110,0.45)';
+  ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H-pad.b); ctx.lineTo(W-pad.r, H-pad.b); ctx.stroke();
+  return { X, Y, YT, pad };
+}
+function annealLine(ctx, pts, X, Y, field, color, width, dash){
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash||[]);
+  ctx.beginPath(); let started = false;
+  pts.forEach(p=>{
+    if(p[field] == null){ started = false; return; }
+    const x = X(p.x), y = Y(p[field]);
+    started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true;
+  });
+  ctx.stroke(); ctx.setLineDash([]);
+}
+function annealVLine(ctx, x, pad, H, color){
+  ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, H-pad.b); ctx.stroke(); ctx.setLineDash([]);
+}
+function annealCanvas(id){
+  const cvs = document.getElementById(id); fitCanvasToContainer(cvs);
+  const W = cvs.width, H = cvs.height, s = annealScale();
+  cvs.width = Math.round(W*s); cvs.height = Math.round(H*s);
+  const ctx = cvs.getContext('2d');
+  ctx.setTransform(s, 0, 0, s, 0, 0);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+  return { cvs, ctx, W, H };
+}
+function annealEmpty(ctx, W, H, msg){
+  ctx.fillStyle = '#6f9088'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(msg, W/2, H/2);
+}
+function drawAnnealViz(){
+  const keys = Object.keys(ANNEAL.series);
+  const sel = ANNEAL.series[ANNEAL.selected];
+  if(sel) document.getElementById('annealStageLabel').textContent = `${(PATTERN_META[ANNEAL.selected]||{label:ANNEAL.selected}).label}: ${sel.stage}`;
+
+  // 1 -- best cost, every pattern.
+  { const { ctx, W, H } = annealCanvas('annealCostCanvas');
+    const all = keys.flatMap(k => ANNEAL.series[k].pts).filter(p => p.best != null && p.best > 0);
+    if(!all.length) annealEmpty(ctx, W, H, 'No samples yet');
+    else {
+      const xMax = Math.max(...all.map(p=>p.x));
+      const { X, Y, pad } = annealAxes(ctx, W, H, xMax, Math.min(...all.map(p=>p.best)), Math.max(...all.map(p=>p.best)), 0);
+      keys.forEach(k=>{
+        const s = ANNEAL.series[k], color = (PATTERN_META[k]||{color:'#888'}).color;
+        if(s.polishStart != null) annealVLine(ctx, X(s.polishStart), pad, H, color+'88');
+        annealLine(ctx, s.pts, X, Y, 'best', color, k === ANNEAL.selected ? 2.4 : 1.5);
+      });
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      keys.forEach((k, i)=>{ const m = PATTERN_META[k]||{label:k, color:'#888'}; ctx.fillStyle = m.color; ctx.fillText(m.label, W-14, pad.t+2+i*12); });
+    }
+  }
+
+  // 2 -- current vs best cost and temperature, selected pattern.
+  { const { ctx, W, H } = annealCanvas('annealTempCanvas');
+    const pts = sel ? sel.pts : [];
+    const costs = pts.flatMap(p => [p.best, p.cur]).filter(c => c != null && c > 0);
+    if(!costs.length) annealEmpty(ctx, W, H, 'No samples yet');
+    else {
+      const xMax = Math.max(...pts.map(p=>p.x)), tMax = Math.max(...pts.map(p=>p.T), 1e-9);
+      const { X, Y, YT, pad } = annealAxes(ctx, W, H, xMax, Math.min(...costs), Math.max(...costs), tMax);
+      const color = (PATTERN_META[ANNEAL.selected]||{color:'#888'}).color;
+      if(sel.polishStart != null) annealVLine(ctx, X(sel.polishStart), pad, H, 'rgba(80,130,110,0.5)');
+      annealLine(ctx, pts, X, YT, 'T', '#c96b3a', 1.2, [5,3]);
+      annealLine(ctx, pts, X, Y, 'cur', color+'88', 1);
+      annealLine(ctx, pts, X, Y, 'best', color, 2.2);
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      [['current (accepted) cost', color+'aa'], ['best cost', color], ['temperature', '#c96b3a']]
+        .forEach(([t, c], i)=>{ ctx.fillStyle = c; ctx.fillText(t, W-pad.r-4, pad.t+2+i*12); });
+    }
+  }
+
+  // 3 -- best layout so far, selected pattern.
+  { const cvs = document.getElementById('annealDesignCanvas');
+    if(sel && sel.braces) drawPatternOnCanvas(cvs, { ok:true, braces: sel.braces }, (PATTERN_META[ANNEAL.selected]||{color:'#888888'}).color, annealScale());
+    else { const { ctx, W, H } = annealCanvas('annealDesignCanvas'); annealEmpty(ctx, W, H, 'No design yet'); }
+  }
+}
+
 window.onOptimizerDone = (jsonStr, cancelled)=>{
   optimizerRunning = false;
   document.getElementById('runOptimizeBtn').disabled = false;
@@ -2015,7 +2256,7 @@ function buildGeoPayload(GN){
     bcMode: GEO.bcMode, outline: GEO.outlinePts, holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
     bridgeFx: c.fx, bridgeFy: c.fy, loadN: GEO.loadN, bridgeTorqueNmm: GEO.bridgeTorqueNmm, GN,
     bridgePts: GEO.bridgePts, bridgeLenMm: GEO.bridgeLenMm, bridgeDepthMm: GEO.bridgeDepthMm,
-    braceSegMm: +document.getElementById('braceSegMm').value || 20,
+    braceSegMm: +document.getElementById('braceSegMm').value || 10,
   };
 }
 document.getElementById('braceSegMm').addEventListener('input', function(){
@@ -2607,6 +2848,7 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
   };
   document.getElementById('genLog').textContent = '';
   document.getElementById('genProgressFill').style.width='0%';
+  resetAnnealViz();
   logStatus(document.getElementById('genStatus'), 'Running… this can take a while for larger iteration counts.', 'warn');
   appendLog('Starting optimizer for patterns: '+patterns.join(', '));
   optimizerRunning = true;
@@ -2725,6 +2967,12 @@ function renderResults(){
             <button class="btn" data-export="${key}">💾 Export as project…</button>
             <button class="btn primary" data-editbyhand="${key}" ${res.ok && res.braces && res.braces.length ? '' : 'disabled'}>✏️ Edit by hand</button>
           </div>
+          <div class="btn-row" style="margin-top:6px">
+            <button class="btn" data-exportstl="${key}" ${res.ok ? '' : 'disabled'} title="Triangle mesh of the plate and braces, in mm">⬇ STL</button>
+            ${isDesktopBuild() ? `<button class="btn" data-exportstep="${key}" ${res.ok ? '' : 'disabled'} title="Solid bodies for simulation; also saves the simulation info alongside">⬇ STEP</button>` : ''}
+            <button class="btn" data-exportsim="${key}" ${res.ok ? '' : 'disabled'} title="Materials, edge condition, load and predicted frequencies, for setting up a simulation">⬇ Simulation info</button>
+          </div>
+          <div class="status" id="cadstatus_${key}" style="display:none; margin-top:6px"></div>
         </div>`;
       grid.appendChild(card);
       requestAnimationFrame(()=> drawPatternCanvas(key, res, meta.color));
@@ -2753,6 +3001,9 @@ function renderResults(){
   grid.querySelectorAll('[data-export]').forEach(btn=>{
     btn.onclick = ()=> exportPatternProject(btn.dataset.export);
   });
+  grid.querySelectorAll('[data-exportstl]').forEach(btn=>{ btn.onclick = ()=> exportPatternSTL(btn.dataset.exportstl); });
+  grid.querySelectorAll('[data-exportstep]').forEach(btn=>{ btn.onclick = ()=> exportPatternSTEP(btn.dataset.exportstep); });
+  grid.querySelectorAll('[data-exportsim]').forEach(btn=>{ btn.onclick = ()=> exportPatternSimInfo(btn.dataset.exportsim); });
   grid.querySelectorAll('[data-editbyhand]').forEach(btn=>{
     btn.onclick = ()=> sendResultToHandEditor(btn.dataset.editbyhand);
   });
@@ -2875,8 +3126,13 @@ function braceFootprintPoints(b, LxMm, LyMm, NS){
 
 function drawPatternCanvas(key, res, color){
   const cvs = document.getElementById('rescanvas_'+key); if(!cvs) return;
+  drawPatternOnCanvas(cvs, res, color);
+}
+function drawPatternOnCanvas(cvs, res, color, scale){
   fitCanvasToContainer(cvs);
-  const ctx = cvs.getContext('2d'); const W=cvs.width,H=cvs.height;
+  const W=cvs.width, H=cvs.height, s=scale||1;
+  if(s !== 1){ cvs.width = Math.round(W*s); cvs.height = Math.round(H*s); }
+  const ctx = cvs.getContext('2d'); ctx.setTransform(s, 0, 0, s, 0, 0);
   ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
   const aspect = GEO.Lx/GEO.Ly; // height:width -- length runs top-to-bottom, matching the geometry tab
   const drawH = Math.min(H*0.88, W*0.88*aspect), drawW = drawH/aspect;
@@ -3284,9 +3540,10 @@ async function export3DVideo(key, btn){
     const url = URL.createObjectURL(blob);
     const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
     const label = ((PATTERN_META[key]||{label:key}).label).replace(/[^a-z0-9]+/gi,'_');
-    const a = document.createElement('a');
-    a.href = url; a.download = `${label}_mode${st.activeMode+1}_3d_x5loops.${ext}`; a.click();
-    showStatus('Done — download started.', 'ok');
+    URL.revokeObjectURL(url);
+    saveBlob(`${label}_mode${st.activeMode+1}_3d_x5loops.${ext}`, blob)
+      .then(saved=> showStatus(saved ? 'Video saved.' : 'Save cancelled.', saved ? 'ok' : 'warn'))
+      .catch(err=> showStatus('Could not save video: '+err.message, 'err'));
     btn.disabled = false;
     st.playing = wasPlaying;
     const playBtn = document.querySelector(`[data-anim3dplay="${key}"]`);
@@ -3377,11 +3634,240 @@ function buildVisualizerFormatProject(key){
     })),
   };
 }
+/* ============================================================
+   FILE SAVING + CAD EXPORT
+   saveBlob: the desktop build's webview ignores <a download>, so there it
+   goes through the Python side's native Save dialog; in a browser it's an
+   ordinary download.
+
+   STL (both builds) is built here from the same geometry the Results
+   diagram draws. STEP (desktop only) is built natively by cad_export.py
+   from the same payload. Shared frame, in mm: x along the body length
+   (Lx, the grain direction the solver assumes), y across the width (Ly),
+   z normal to the plate; origin at the outline's bounding-box corner;
+   braces sit on the +z face.
+   ============================================================ */
+function isDesktopBuild(){ return !!(window.pywebview && window.pywebview.api && window.pywebview.api.save_file); }
+function blobToBase64(blob){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload = ()=> resolve(String(r.result).split(',')[1] || '');
+    r.onerror = ()=> reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+// Resolves to the saved path/name, or null if the person cancelled.
+async function saveBlob(filename, blob){
+  if(isDesktopBuild()) return window.pywebview.api.save_file(filename, await blobToBase64(blob));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 60000);
+  return filename;
+}
+function cadFileBase(key){
+  const proj = (document.getElementById('projectNameInput').value || 'bracing').trim();
+  const pat = (PATTERN_META[key]||{label:key}).label;
+  return `${proj}_${pat}`.replace(/[^a-z0-9\-_ ]+/gi, ' ').trim().replace(/\s+/g, '_') || 'bracing_design';
+}
+function cadStatus(key, msg, cls){
+  const el = document.getElementById('cadstatus_'+key); if(!el) return;
+  el.style.display = msg ? 'block' : 'none';
+  logStatus(el, msg || '', cls);
+}
+
+// Plate outline (the drawn spline) in mm, without a repeated closing point.
+function cadOutlineMm(){
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000, out = [];
+  catmullRomSpline(GEO.outlinePts, true, 240).forEach(p=>{
+    const q = [p.fx*LxMm, p.fy*LyMm], last = out[out.length-1];
+    if(!last || Math.hypot(q[0]-last[0], q[1]-last[1]) > 1e-6) out.push(q);
+  });
+  if(out.length > 2 && Math.hypot(out[0][0]-out[out.length-1][0], out[0][1]-out[out.length-1][1]) < 1e-6) out.pop();
+  return out;
+}
+function cadHoleMm(){
+  if(!(GEO.holeR > 0.001)) return null;
+  return { x: GEO.holeCx*GEO.Lx*1000, y: GEO.holeCy*GEO.Ly*1000, r: GEO.holeR*Math.min(GEO.Lx, GEO.Ly)*1000 };
+}
+function cadBraces(res){
+  const E = +document.getElementById('braceE').value*1e9 || 10e9, rho = +document.getElementById('braceRho').value || 420;
+  return (res.braces||[]).map(b=> ({ ...b, modulus: b.modulus || E, density: b.density || rho }));
+}
+// Mirrors cad_export.py's per-material body naming.
+function cadBodyNames(braces){
+  const keyOf = b=> `${+(b.modulus/1e9).toFixed(2)}|${Math.round(b.density)}`;
+  const keys = [...new Set(braces.map(keyOf))];
+  return braces.map(b=>{
+    if(keys.length < 2) return 'braces';
+    const [E, rho] = keyOf(b).split('|');
+    return `braces_E${E}GPa_rho${rho}`;
+  });
+}
+
+function designSimulationInfo(key, res){
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  const braces = cadBraces(res), bodies = cadBodyNames(braces);
+  const bridge = GEO.bridgePts.length >= 2 ? GEO.bridgePts.map(p=>[p.fx*LxMm, p.fy*LyMm])
+                                           : [[GEO.bridge.fx*LxMm, GEO.bridge.fy*LyMm]];
+  return {
+    format: 'bracing-studio-simulation-info', version: 1,
+    project: (document.getElementById('projectNameInput').value || '').trim(),
+    pattern: (PATTERN_META[key]||{label:key}).label,
+    exported: new Date().toISOString(),
+    units: { length:'mm', modulus:'Pa', density:'kg/m^3', force:'N', torque:'N*mm', frequency:'Hz', mass:'g' },
+    axes: {
+      x: 'body length (Lx); the solver assumes the top\'s grain runs along x',
+      y: 'body width (Ly)',
+      z: 'plate normal; braces sit on the +z face',
+      origin: 'corner of the outline\'s bounding box',
+    },
+    plate: {
+      body: 'top_plate',
+      thickness_mm: GEO.h*1000,
+      outline_mm: cadOutlineMm(),
+      sound_hole_mm: cadHoleMm(),
+      material: { type: 'orthotropic', E_L_along_x: GEO.E, E_R_along_y: GEO.Ey, G_LR: GEO.Gxy, nu_LR: GEO.nu, density: GEO.rho },
+      edge_condition: GEO.bcMode === 'ss' ? 'simply supported along the outline (zero deflection, free rotation)' : 'free (unsupported)',
+    },
+    load: {
+      bridge_footprint_mm: bridge,
+      vertical_load_N: GEO.loadN,
+      bridge_torque_Nmm: GEO.bridgeTorqueNmm,
+      deflection_limit_mm: GEO.deflLimitMm,
+    },
+    braces: braces.map((b,i)=>({
+      index: i+1, body: bodies[i],
+      shape: (b.type==='curve'||b.type==='curve3') ? 'curved' : 'straight',
+      length_mm: +braceLengthMm(b, LxMm, LyMm).toFixed(2),
+      width_mm: { center: b.width, tips: b.widthTip==null ? b.width : b.widthTip },
+      height_mm: { center: b.height, tips: b.heightTip==null ? b.height : b.heightTip },
+      taper: 'parabolic: tip value at both ends, center value at the midpoint',
+      material: { E: b.modulus, density: b.density },
+    })),
+    predicted_by_this_tool: {
+      mode_frequencies_Hz: res.freqs,
+      bridge_deflection_mm: res.deflBridgeMm,
+      max_deflection_mm: res.deflMaxMm,
+      brace_mass_g: res.massG,
+    },
+    notes: [
+      'Braces are modelled as rectangular sections (with taper) bonded to the plate; real profiles (peaked, scalloped) will differ.',
+      'The top plate is flat; any doming is not represented.',
+      'In the STEP file, braces of one material are fused into a single body and trimmed to the plate outline and sound hole; the STL contains each brace as its own (possibly overlapping) shell.',
+    ],
+  };
+}
+
+// Binary STL of the plate + every brace, in mm.
+function buildDesignSTL(res){
+  const tris = [];
+  const tri = (a, b, c, ref)=>{
+    // Orient outward: flip if the normal points toward the interior reference point.
+    const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2], vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+    let n = [uy*vz-uz*vy, uz*vx-ux*vz, ux*vy-uy*vx];
+    const len = Math.hypot(...n); if(len < 1e-12) return;
+    n = n.map(v=>v/len);
+    if(ref){
+      const cx=(a[0]+b[0]+c[0])/3-ref[0], cy=(a[1]+b[1]+c[1])/3-ref[1], cz=(a[2]+b[2]+c[2])/3-ref[2];
+      if(n[0]*cx+n[1]*cy+n[2]*cz < 0){ tris.push([n.map(v=>-v), a, c, b]); return; }
+    }
+    tris.push([n, a, b, c]);
+  };
+  const h = GEO.h*1000;
+  const area = pts=> pts.reduce((s,p,i)=>{ const q=pts[(i+1)%pts.length]; return s + p[0]*q[1]-q[0]*p[1]; }, 0)/2;
+
+  // Plate: caps from Three.js's polygon-with-hole triangulator, then walls.
+  let outer = cadOutlineMm(); if(area(outer) < 0) outer = outer.slice().reverse();
+  const holes = [], hole = cadHoleMm();
+  if(hole){
+    const ring = [];
+    for(let i=0;i<96;i++){ const a = -2*Math.PI*i/96; ring.push([hole.x+hole.r*Math.cos(a), hole.y+hole.r*Math.sin(a)]); } // clockwise
+    holes.push(ring);
+  }
+  const V2 = r=> r.map(p=> new THREE.Vector2(p[0], p[1]));
+  const all = outer.concat(...holes);
+  THREE.ShapeUtils.triangulateShape(V2(outer), holes.map(V2)).forEach(([i,j,k])=>{
+    const A=all[i], B=all[j], C=all[k];
+    const up = ((B[0]-A[0])*(C[1]-A[1]) - (B[1]-A[1])*(C[0]-A[0])) > 0;
+    const [P,Q,R] = up ? [A,B,C] : [A,C,B];
+    tri([P[0],P[1],h], [Q[0],Q[1],h], [R[0],R[1],h]);   // top (+z)
+    tri([P[0],P[1],0], [R[0],R[1],0], [Q[0],Q[1],0]);   // bottom (-z)
+  });
+  // Outer ring is counter-clockwise and the hole clockwise, so (p -> q) with
+  // the material on the left gives outward walls for both.
+  [outer, ...holes].forEach(ring=> ring.forEach((p,i)=>{
+    const q = ring[(i+1)%ring.length];
+    tri([p[0],p[1],0], [q[0],q[1],0], [q[0],q[1],h]);
+    tri([p[0],p[1],0], [q[0],q[1],h], [p[0],p[1],h]);
+  }));
+
+  // Braces: tapered rectangle swept along the centreline, capped at both ends.
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  cadBraces(res).forEach(b=>{
+    const fp = braceFootprintPoints(b, LxMm, LyMm, 32);
+    const hT = b.heightTip==null ? b.height : b.heightTip;
+    const rings = fp.centerline.map((c,k)=>{
+      const H = dimAt(b.height, hT, c.t), L = fp.left[k], R = fp.right[k];
+      return { pts: [[L.x,L.y,h], [R.x,R.y,h], [R.x,R.y,h+H], [L.x,L.y,h+H]], mid: [c.x, c.y, h+H/2] };
+    });
+    for(let k=0;k<rings.length-1;k++){
+      const A = rings[k], B = rings[k+1];
+      const ref = A.mid.map((v,i)=> (v+B.mid[i])/2);
+      for(let j=0;j<4;j++){
+        const j2 = (j+1)%4;
+        tri(A.pts[j], A.pts[j2], B.pts[j2], ref);
+        tri(A.pts[j], B.pts[j2], B.pts[j], ref);
+      }
+    }
+    [[rings[0], rings[1]], [rings[rings.length-1], rings[rings.length-2]]].forEach(([end, inner])=>{
+      tri(end.pts[0], end.pts[1], end.pts[2], inner.mid);
+      tri(end.pts[0], end.pts[2], end.pts[3], inner.mid);
+    });
+  });
+
+  const buf = new ArrayBuffer(84 + 50*tris.length), dv = new DataView(buf);
+  const header = 'Bracing Studio design, units mm, x = body length (grain), z = plate normal';
+  for(let i=0;i<Math.min(80, header.length);i++) dv.setUint8(i, header.charCodeAt(i));
+  dv.setUint32(80, tris.length, true);
+  let o = 84;
+  tris.forEach(t=>{ t.forEach(v=>{ dv.setFloat32(o, v[0], true); dv.setFloat32(o+4, v[1], true); dv.setFloat32(o+8, v[2], true); o += 12; }); o += 2; });
+  return { buffer: buf, triangles: tris.length };
+}
+
+async function exportPatternSTL(key){
+  const res = GEN.results[key]; if(!res) return;
+  try{
+    const { buffer, triangles } = buildDesignSTL(res);
+    const saved = await saveBlob(cadFileBase(key)+'.stl', new Blob([buffer], {type:'model/stl'}));
+    cadStatus(key, saved ? `STL saved (${triangles.toLocaleString()} triangles, mm).` : 'Save cancelled.', saved ? 'ok' : 'warn');
+  } catch(err){ console.error(err); cadStatus(key, 'STL export failed: '+err.message, 'err'); }
+}
+async function exportPatternSTEP(key){
+  const res = GEN.results[key]; if(!res || !isDesktopBuild()) return;
+  const btn = document.querySelector(`[data-exportstep="${key}"]`);
+  if(btn) btn.disabled = true;
+  cadStatus(key, 'Building STEP solids… (choose where to save first)', 'warn');
+  try{
+    const payload = { LxMm: GEO.Lx*1000, LyMm: GEO.Ly*1000, hMm: GEO.h*1000, outline: cadOutlineMm(), hole: cadHoleMm(),
+                      braces: cadBraces(res), simulationInfo: designSimulationInfo(key, res) };
+    const r = await window.pywebview.api.export_step(JSON.stringify(payload), cadFileBase(key)+'.step');
+    if(r && r.ok) cadStatus(key, `STEP saved with ${r.bodies.map(b=>b.name).join(', ')}, plus simulation info next to it.`, 'ok');
+    else if(r && r.cancelled) cadStatus(key, 'Save cancelled.', 'warn');
+    else cadStatus(key, 'STEP export failed: '+((r && r.error) || 'unknown error'), 'err');
+  } catch(err){ console.error(err); cadStatus(key, 'STEP export failed: '+err.message, 'err'); }
+  if(btn) btn.disabled = false;
+}
+async function exportPatternSimInfo(key){
+  const res = GEN.results[key]; if(!res) return;
+  const blob = new Blob([JSON.stringify(designSimulationInfo(key, res), null, 2)], {type:'application/json'});
+  const saved = await saveBlob(cadFileBase(key)+'_simulation.json', blob);
+  cadStatus(key, saved ? 'Simulation info saved.' : 'Save cancelled.', saved ? 'ok' : 'warn');
+}
+
 function exportPatternProject(key){
   const proj = buildVisualizerFormatProject(key);
   const blob = new Blob([JSON.stringify(proj,null,2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = `bracing_${key}.json`; a.click();
+  saveBlob(`bracing_${key}.json`, blob);
 }
 
 /* ============================================================
@@ -3422,7 +3908,7 @@ document.getElementById('saveProjectBtn').onclick = ()=>{
   const proj = { title, savedAt: new Date().toISOString(), GEO: geoToSave, MS: {modes: MS.modes}, DS: {nodes: DS.nodes, frf: serializeFrf(DS.frf)}, GEN };
   const blob = new Blob([JSON.stringify(proj)], {type:'application/json'});
   const safeName = title.replace(/[^a-z0-9\-_ ]/gi,'').trim().replace(/\s+/g,'_') || 'bracing_designer_project';
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = safeName+'.json'; a.click();
+  saveBlob(safeName+'.json', blob);
 };
 document.getElementById('loadProjectBtn').onclick = ()=> document.getElementById('loadProjectInput').click();
 /* Shared by the file-load path below and the quick handoff from Bracing

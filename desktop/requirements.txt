@@ -1,3 +1,4 @@
 pywebview>=5.0
 numpy
 scipy
+cadquery-ocp  # STEP export only; the app runs without it

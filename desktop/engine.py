@@ -38,6 +38,7 @@ from scipy.spatial import cKDTree
 # is a no-op.
 BRIDGE = {
     'onOptimizerProgress': lambda *a, **k: None,
+    'onOptimizerTrace': lambda *a, **k: None,
     'onOptimizerDone': lambda *a, **k: None,
     'onOptimizerError': lambda *a, **k: None,
     'onManualEvalDone': lambda *a, **k: None,
@@ -159,7 +160,7 @@ def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
     Lyy = build([(0,-1,coef2), (0,0,-2*coef2), (0,1,coef2)])
     Lxy = build([(1,1,0.25*coef2), (1,-1,-0.25*coef2), (-1,1,-0.25*coef2), (-1,-1,0.25*coef2)])
     return {'Lxx': Lxx, 'Lyy': Lyy, 'Lxy': Lxy, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
-            'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id,
+            'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id, 'bc_mode': bc_mode,
             'inside': inside, 'bbx0': bbx0, 'bby0': bby0}
 
 def _dim_at(center, tip, t):
@@ -179,7 +180,7 @@ def _brace_ns(b, Lx, Ly, seg_len_mm):
         return 10
     a, z = b['pts'][0], b['pts'][1]
     chord_mm = math.hypot((z['fx']-a['fx'])*Lx, (z['fy']-a['fy'])*Ly) * 1000.0
-    return int(max(4, min(60, round(chord_mm / seg_len_mm))))
+    return int(max(4, min(300, round(chord_mm / seg_len_mm))))
 
 def _sample_brace(b, Lx, Ly, NS=10):
     a, z = b['pts'][0], b['pts'][1]
@@ -230,40 +231,110 @@ def braces_to_masses(braces, Lx, Ly, seg_len_mm=None):
                 xs.append(min(0.999, max(0.001, x/Lx))*Lx); ys.append(min(0.999, max(0.001, y/Ly))*Ly); ms.append(m)
     return xs, ys, ms
 
+def _bilinear_corners(grid, xs, ys):
+    """Bilinear interpolation from the 4 grid nodes surrounding each physical
+    point (xs, ys arrays, metres). Returns (ids, W), both shape (n, 4): DOF
+    index of each corner (-1 where that corner isn't a DOF) and its weight.
+
+    Corners that aren't DOFs are dropped. Under a simply-supported edge
+    that's exact -- those nodes are the w=0 ring -- so the weights are left
+    as they are. Under a free edge they're just missing (outside the plate),
+    so the remaining weights are renormalized to sum to 1; otherwise a rigid
+    translation would read as curvature near the edge and break the plate's
+    rigid-body modes."""
+    nx, ny, dd = grid['nx'], grid['ny'], grid['dd']
+    fx = (np.asarray(xs, dtype=float) - grid['bbx0']) / dd
+    fy = (np.asarray(ys, dtype=float) - grid['bby0']) / dd
+    i0 = np.clip(np.floor(fx).astype(int), 0, nx-2)
+    j0 = np.clip(np.floor(fy).astype(int), 0, ny-2)
+    tx = np.clip(fx - i0, 0.0, 1.0); ty = np.clip(fy - j0, 0.0, 1.0)
+    ci = np.stack([i0, i0+1, i0, i0+1], axis=1)
+    cj = np.stack([j0, j0, j0+1, j0+1], axis=1)
+    W = np.stack([(1-tx)*(1-ty), tx*(1-ty), (1-tx)*ty, tx*ty], axis=1)
+    ids = grid['node_id'][cj, ci]
+    W = np.where(ids >= 0, W, 0.0)
+    if grid.get('bc_mode') != 'ss':
+        tot = W.sum(axis=1, keepdims=True)
+        W = np.where(tot > 1e-12, W / np.where(tot > 1e-12, tot, 1.0), 0.0)
+    return ids, W
+
+def _brace_stations(b, Lx, Ly, spacing):
+    """Points along a brace's centreline, evenly spaced in ARC length at
+    roughly `spacing` (never fewer than 3). Returns (xy (n,2) in metres,
+    t (n,) Bezier parameter for the local cross-section, h = actual spacing)."""
+    curved = b.get('type') in ('curve', 'curve3') and b.get('cp') is not None
+    dense = _sample_brace(b, Lx, Ly, 48 if curved else 1)  # a straight brace's arc length is exact from its endpoints
+    P = np.array([[p[0], p[1]] for p in dense]); T = np.array([p[3] for p in dense])
+    s = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(P, axis=0).T))])
+    L = s[-1]
+    if L <= 0:
+        return None, None, 0.0
+    n = max(3, int(round(L / spacing)) + 1)
+    sq = np.linspace(0.0, L, n)
+    xy = np.stack([np.interp(sq, s, P[:, 0]), np.interp(sq, s, P[:, 1])], axis=1)
+    return xy, np.interp(sq, s, T), L / (n - 1)
+
 def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None):
-    node_local = np.stack([grid['nodes_i']*grid['dd'], grid['nodes_j']*grid['dd']], axis=1)
-    tree = cKDTree(node_local)
-    rows, cols, vals = [], [], []
-    dd = grid['dd']
+    """Each brace as an Euler-Bernoulli beam embedded in the plate: bending
+    energy 0.5*EI*(w'')^2 integrated along its arc length, with w at any point
+    on the brace bilinearly interpolated from the 4 surrounding plate nodes
+    (_bilinear_corners).
+
+    Curvature comes from a 3-point second difference between stations spaced
+    about one grid spacing apart (_brace_stations) -- deliberately NOT the
+    mass-sampling length (seg_len_mm, unused here). Bilinear interpolation is
+    only linear within a cell, so stations closer together than the grid
+    can't see the plate's curvature; at grid spacing the stencil matches the
+    resolution the plate itself is solved at. That makes the result
+    independent of the sampling setting, independent of the brace's angle to
+    the grid, and smooth as a brace moves -- unlike snapping each sample to
+    its nearest node, which skipped samples that landed on the same node and
+    divided node-spaced differences by the (much smaller) sample spacing.
+
+    Same per-unit-area scaling as the plate operator (hence /dd^2)."""
+    dd = grid['dd']; N = grid['N']
+    all_ids, all_g, all_c = [], [], []
     for b in braces:
         wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
         modulus = b.get('modulus', 10e9)
-        pts = _sample_brace(b, Lx, Ly, _brace_ns(b, Lx, Ly, seg_len_mm))
-        xy = np.array([[p[0]-grid['bbx0'], p[1]-grid['bby0']] for p in pts])
-        _, idxs = tree.query(xy)
-        for k in range(1, len(pts)-1):
-            i0, i1, i2 = int(idxs[k-1]), int(idxs[k]), int(idxs[k+1])
-            if i0 == i1 or i1 == i2 or i0 == i2: continue
-            x0,y0,_,_ = pts[k-1]; x1,y1,_,tk = pts[k]; x2,y2,_,_ = pts[k+1]
-            hL = math.hypot(x1-x0, y1-y0); hR = math.hypot(x2-x1, y2-y1)
-            if hL <= 0 or hR <= 0: continue
-            ds = 0.5*(hL+hR)
-            # Local cross-section at this point, so a tapered brace is
-            # correctly softer near its tips and stiffer through its middle.
-            wk = _dim_at(wC, wT, tk); hk = _dim_at(hC, hT, tk)
-            EI = modulus * (wk * hk**3 / 12.0)
-            a0 = 2.0/(hL*(hL+hR)); a1 = -2.0/(hL*hR); a2 = 2.0/(hR*(hL+hR))
-            coef = (EI*ds)/(dd*dd)
-            idx3=[i0,i1,i2]; av=[a0,a1,a2]
-            for p in range(3):
-                for q in range(3):
-                    rows.append(idx3[p]); cols.append(idx3[q]); vals.append(coef*av[p]*av[q])
-    N = grid['N']
-    if not rows: return sparse.csr_matrix((N,N))
-    K = sparse.coo_matrix((vals,(rows,cols)), shape=(N,N)).tocsr()
+        xy, t, hs = _brace_stations(b, Lx, Ly, dd)
+        if xy is None:
+            continue
+        ids, W = _bilinear_corners(grid, xy[:, 0], xy[:, 1])
+        a = np.array([1.0, -2.0, 1.0]) / (hs*hs)
+        # Interior station k uses stations k-1, k, k+1 -> 12 (node, weight) pairs.
+        k = np.arange(1, len(xy)-1)
+        g_ids = np.concatenate([ids[k-1], ids[k], ids[k+1]], axis=1)
+        g = np.concatenate([a[0]*W[k-1], a[1]*W[k], a[2]*W[k+1]], axis=1)
+        # Local cross-section at each station, so a tapered brace is
+        # correctly softer near its tips and stiffer through its middle.
+        wk = _dim_at(wC, wT, t[k]); hk = _dim_at(hC, hT, t[k])
+        EI = modulus * wk * hk**3 / 12.0
+        all_ids.append(g_ids); all_g.append(g); all_c.append(EI * hs / (dd*dd))
+    if not all_ids:
+        return sparse.csr_matrix((N, N))
+    g_ids = np.concatenate(all_ids); g = np.concatenate(all_g); coef = np.concatenate(all_c)
+    rows = np.broadcast_to(g_ids[:, :, None], g_ids.shape + (12,)).ravel()
+    cols = np.broadcast_to(g_ids[:, None, :], g_ids.shape[:1] + (12, 12)).ravel()
+    vals = (coef[:, None, None] * g[:, :, None] * g[:, None, :]).ravel()
+    keep = (rows >= 0) & (cols >= 0) & (vals != 0)
+    K = sparse.coo_matrix((vals[keep], (rows[keep], cols[keep])), shape=(N, N)).tocsr()
     K.sum_duplicates()
     return K
+
+def _spread_to_nodes(grid, xs, ys, weights):
+    """Like _map_to_nodes, but splits each point's weight bilinearly over its
+    4 surrounding nodes instead of dropping it all on the nearest one -- so
+    brace mass moves smoothly with the brace rather than jumping node to
+    node as the optimizer nudges it."""
+    out = np.zeros(grid['N'])
+    if not len(xs): return out
+    ids, W = _bilinear_corners(grid, xs, ys)
+    contrib = W * np.asarray(weights, dtype=float)[:, None]
+    ok = ids >= 0
+    np.add.at(out, ids[ok], contrib[ok])
+    return out
 
 def _map_to_nodes(grid, xs, ys, weights):
     N = grid['N']; out = np.zeros(N)
@@ -435,7 +506,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
 
     seg_len_mm = geo.get('braceSegMm')
     mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
-    braceM = _map_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
+    braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
     K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm)
     # Three separate directional terms, each squared for guaranteed
@@ -930,6 +1001,8 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
         if CANCEL_FLAG['stop']:
             break
         T = temp_scale * (0.995**it)
+        if it % max(1, iters//150) == 0 or it == iters-1:
+            progress_cb(label, it, iters, best_cost, best_result, trace=(cur_cost, T, encode_fn(best_x, geo)))
         step = np.array([(hi-lo) for lo,hi in bounds]) * (0.25*T + 0.02)
         cand = clip(x + np.random.normal(0,1,n)*step) if it>0 else x
         braces = encode_fn(cand, geo)
@@ -1155,6 +1228,8 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         if CANCEL_FLAG['stop']:
             break
         T = temp_scale*(0.995**it)
+        if it % max(1, iters//150) == 0 or it == iters-1:
+            progress_cb(label, it, iters, best_cost, best_result, trace=(cur_cost, T, expand(best_braces)))
         cand = [dict(b, pts=[dict(pp) for pp in b['pts']], **({'cp':dict(b['cp'])} if b.get('cp') else {})) for b in braces]
         move = random.random()
         if lock_positions and cur_hole_violation <= 1e-12:
@@ -1285,7 +1360,12 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
 
 
 # ── Main entry point called from JS ──────────────────────────────────────
-def _progress(label, it, iters, best_cost, best_result):
+def _progress(label, it, iters, best_cost, best_result, trace=None):
+    if trace is not None:
+        cur_cost, T, braces = trace
+        BRIDGE['onOptimizerTrace'](label, it, iters, float(best_cost), float(cur_cost), float(T),
+                                   json.dumps(braces, default=float))
+        return
     defl = best_result['deflBridgeMm'] if best_result and best_result.get('ok') else None
     freqs = best_result['freqs'] if best_result and best_result.get('ok') else []
     BRIDGE['onOptimizerProgress'](label, it, iters, float(best_cost),
@@ -1656,8 +1736,16 @@ async def _solve_pattern_async(key, p, progress_queue=None):
     custom_symmetric = False
     custom_lock_positions = p.get('customLockPositions', False)
 
-    def _report_progress(label, it, iters_, best_cost, best_result):
+    def _report_progress(label, it, iters_, best_cost, best_result, trace=None):
         if progress_queue is None:
+            return
+        if trace is not None:
+            cur_cost, T, braces = trace
+            try:
+                progress_queue.put(('__trace__', label, it, iters_, float(best_cost), float(cur_cost), float(T),
+                                    json.dumps(braces, default=float)))
+            except Exception:
+                pass
             return
         defl = best_result['deflBridgeMm'] if best_result and best_result.get('ok') else None
         freqs = best_result['freqs'] if best_result and best_result.get('ok') else []
@@ -1816,6 +1904,12 @@ def run_all_patterns_parallel(payload_json):
         progress_queue = manager.Queue()
         REQUEST_CANCEL['event'] = cancel_event
 
+        def _dispatch(msg):
+            if msg and msg[0] == '__trace__':
+                BRIDGE['onOptimizerTrace'](*msg[1:])
+            else:
+                BRIDGE['onOptimizerProgress'](*msg)
+
         stop_draining = threading.Event()
         def _drain_progress():
             while not stop_draining.is_set():
@@ -1824,7 +1918,7 @@ def run_all_patterns_parallel(payload_json):
                 except Exception:
                     continue
                 try:
-                    BRIDGE['onOptimizerProgress'](*msg)
+                    _dispatch(msg)
                 except Exception:
                     pass
         drain_thread = threading.Thread(target=_drain_progress, daemon=True)
@@ -1861,7 +1955,7 @@ def run_all_patterns_parallel(payload_json):
             except Exception:
                 break
             try:
-                BRIDGE['onOptimizerProgress'](*msg)
+                _dispatch(msg)
             except Exception:
                 pass
 

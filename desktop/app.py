@@ -15,6 +15,7 @@ Run with:
     python app.py
 """
 import asyncio
+import base64
 import json
 import threading
 from pathlib import Path
@@ -52,6 +53,47 @@ class Api:
         engine.request_cancel_optimizer()
         return True
 
+    # ── File saving ──
+    # pywebview ignores <a download> links by default, so every export goes
+    # through a native Save dialog here instead. _window is set by main();
+    # the leading underscore keeps pywebview from exposing it to the page.
+    _window = None
+
+    def _ask_save_path(self, filename):
+        save = webview.FileDialog.SAVE if hasattr(webview, 'FileDialog') else webview.SAVE_DIALOG  # pywebview 6 / 5
+        res = self._window.create_file_dialog(save, save_filename=filename)
+        if not res:
+            return None
+        return res if isinstance(res, str) else res[0]
+
+    def save_file(self, filename, data_b64):
+        """Save base64-encoded bytes from the page. Returns the chosen path,
+        or None if the person cancelled."""
+        path = self._ask_save_path(filename)
+        if path:
+            Path(path).write_bytes(base64.b64decode(data_b64))
+        return path
+
+    def export_step(self, payload_json, filename):
+        """Build a solved design as STEP solids (see cad_export.py) and write
+        it, plus the page's simulation-info JSON alongside it as
+        <name>_simulation.json. Returns {ok, path, bodies} or {ok: False, error}."""
+        try:
+            import cad_export  # optional dependency -- only needed here
+        except ImportError:
+            return {'ok': False, 'error': 'STEP export needs the OpenCascade kernel: run  pip install cadquery-ocp  in this environment, then restart the app.'}
+        path = self._ask_save_path(filename)
+        if not path:
+            return {'ok': False, 'cancelled': True}
+        try:
+            payload = json.loads(payload_json)
+            bodies = cad_export.export_step(payload, path)
+            sim_path = Path(path).with_name(Path(path).stem + '_simulation.json')
+            sim_path.write_text(json.dumps(payload['simulationInfo'], indent=2))
+            return {'ok': True, 'path': path, 'simPath': str(sim_path), 'bodies': bodies}
+        except Exception as exc:
+            return {'ok': False, 'error': f'{type(exc).__name__}: {exc}'}
+
 
 def _js_literal(value):
     """JSON-encode a single bridge-callback argument for interpolation
@@ -74,6 +116,7 @@ def main():
 
     engine.set_bridge(
         onOptimizerProgress=lambda *a: bridge_call('onOptimizerProgress', *a),
+        onOptimizerTrace=lambda *a: bridge_call('onOptimizerTrace', *a),
         onOptimizerDone=lambda *a: bridge_call('onOptimizerDone', *a),
         onOptimizerError=lambda *a: bridge_call('onOptimizerError', *a),
         onManualEvalDone=lambda *a: bridge_call('onManualEvalDone', *a),
@@ -82,13 +125,15 @@ def main():
         onBareModesError=lambda *a: bridge_call('onBareModesError', *a),
     )
 
+    api = Api()
     window = webview.create_window(
         'Bracing Studio (experimental desktop build)',
         url=str(UI_PATH),
-        js_api=Api(),
+        js_api=api,
         width=1440, height=940, min_size=(1000, 700),
     )
     window_ref['window'] = window
+    api._window = window
 
     def on_loaded():
         # No WASM/numpy/scipy download here -- the engine is already
