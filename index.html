@@ -567,7 +567,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <button class="anneal-save" id="annealCsvBtn" title="Every sample behind these plots: best and current cost and temperature, per pattern and iteration">⬇ Data (CSV)</button>
       </div>
       <div class="anneal-grid">
-        <div><div class="anneal-sub anneal-plot-head"><span>Best cost by pattern (log scale; dashed line = polish starts)</span><button class="anneal-save" data-anneal-png="annealCostCanvas" data-name="best_cost_by_pattern">⬇ PNG</button></div><canvas id="annealCostCanvas"></canvas></div>
+        <div><div class="anneal-sub anneal-plot-head"><span>Best cost by pattern, scaled per run (dashed = polish)</span><button class="anneal-save" data-anneal-png="annealCostCanvas" data-name="best_cost_by_pattern">⬇ PNG</button></div><canvas id="annealCostCanvas"></canvas></div>
         <div><div class="anneal-sub anneal-plot-head"><span>Current vs best cost, with temperature (right axis)</span><button class="anneal-save" data-anneal-png="annealTempCanvas" data-name="cost_and_temperature">⬇ PNG</button></div><canvas id="annealTempCanvas"></canvas></div>
         <div><div class="anneal-sub anneal-plot-head"><span>Best design so far</span><button class="anneal-save" data-anneal-png="annealDesignCanvas" data-name="best_design">⬇ PNG</button></div><canvas id="annealDesignCanvas"></canvas></div>
       </div>
@@ -979,7 +979,36 @@ async function findTrfDir(dirHandle){
   catch(e){ return null; }
 }
 
+// Desktop build: the webview supports neither folder picker below, so the
+// folder is chosen and scanned natively (app.py pick_data_folder) and files
+// are read back on demand (read_data_file).
+async function pickDataFolderNative(){
+  const api = window.pywebview.api;
+  logStatus(document.getElementById('folderStatus'), 'Choose a data folder…');
+  let r;
+  try{ r = await api.pick_data_folder(); }
+  catch(e){ logStatus(document.getElementById('folderStatus'), 'Could not open the folder: '+(e && e.message || e), 'err'); return; }
+  if(!r){ logStatus(document.getElementById('folderStatus'), 'No folder selected.'); return; }
+  finishFolderScan(r.root, r.runs.map(run=> ({ name: run.name, kind:'native', paths: run.files })));
+}
+function nativeDataFile(path){
+  const name = path.split(/[\\/]/).pop();
+  return { name, handle: { getFile: async ()=>{
+    const bin = atob(await window.pywebview.api.read_data_file(path));
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], name);
+  } } };
+}
+function hideFolderCompatModeIfDesktop(){
+  if(window.pywebview && window.pywebview.api && window.pywebview.api.pick_data_folder)
+    document.getElementById('pickFolderFallbackBtn').style.display = 'none';
+}
+window.addEventListener('pywebviewready', hideFolderCompatModeIfDesktop);
+hideFolderCompatModeIfDesktop();
+
 document.getElementById('pickFolderBtn').onclick = async ()=>{
+  if(window.pywebview && window.pywebview.api && window.pywebview.api.pick_data_folder) return pickDataFolderNative();
   if(!window.showDirectoryPicker){
     logStatus(document.getElementById('folderStatus'),
       'This browser has no folder-access API — use "compatibility mode" below.', 'warn');
@@ -1060,6 +1089,8 @@ async function loadRun(run){
     for await (const [name, handle] of run.trfDirHandle.entries()){
       if(handle.kind==='file' && /\.(trf|trv|avr|avc)$/i.test(name)) files.push({name, handle});
     }
+  } else if(run.kind === 'native'){
+    run.paths.forEach(path=> files.push(nativeDataFile(path)));
   } else {
     run.trfFiles.forEach(f=> files.push({ name: f.name, handle: f })); // File objects work directly with parseFrfFile
   }
@@ -2103,7 +2134,8 @@ if(window.ResizeObserver) new ResizeObserver(()=> scheduleAnnealDraw()).observe(
 
 // Shared axes for the two line charts: log-scale cost on the left, optional
 // linear temperature on the right. Returns pixel mappers.
-function annealAxes(ctx, W, H, xMax, cMin, cMax, tMax){
+function annealAxes(ctx, W, H, xMax, cMin, cMax, tMax, xAxis){
+  xAxis = xAxis || { label:'iteration', ticks:[0, xMax], fmt:String };
   const pad = { l:58, r: tMax ? 40 : 10, t:10, b:22 };
   const lo = Math.floor(Math.log10(cMin)), hi = Math.max(lo+1, Math.ceil(Math.log10(cMax)));
   const X = x => pad.l + (W-pad.l-pad.r) * x / Math.max(1, xMax);
@@ -2121,8 +2153,8 @@ function annealAxes(ctx, W, H, xMax, cMin, cMax, tMax){
   ctx.save(); ctx.translate(10, (pad.t + H-pad.b)/2); ctx.rotate(-Math.PI/2);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('cost (log scale)', 0, 0); ctx.restore();
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText('0', X(0), H-pad.b+4); ctx.fillText(String(xMax), X(xMax), H-pad.b+4);
-  ctx.fillText('iteration', (pad.l + W-pad.r)/2, H-pad.b+4);
+  xAxis.ticks.forEach(v=> ctx.fillText(xAxis.fmt(v), X(v), H-pad.b+4));
+  ctx.fillText(xAxis.label, (pad.l + W-pad.r)/2, H-pad.b+4);
   if(tMax){
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c96b3a';
     ctx.fillText(tMax.toPrecision(2), W-pad.r+4, YT(tMax)); ctx.fillText('0', W-pad.r+4, YT(0));
@@ -2164,17 +2196,29 @@ function drawAnnealViz(){
   const sel = ANNEAL.series[ANNEAL.selected];
   if(sel) document.getElementById('annealStageLabel').textContent = `${(PATTERN_META[ANNEAL.selected]||{label:ANNEAL.selected}).label}: ${sel.stage}`;
 
-  // 1 -- best cost, every pattern.
+  // 1 -- best cost, every pattern. Each pattern's x is a percentage of its
+  // OWN search stage, not raw iterations: Experimental deliberately runs
+  // 1.5-3x the iterations of the others (bigger search space), and its
+  // polish stage is scaled by the same factor, so in these units every
+  // pattern's search spans 0-100% and every polish starts at 100%.
   { const { ctx, W, H } = annealCanvas('annealCostCanvas');
-    const all = keys.flatMap(k => ANNEAL.series[k].pts).filter(p => p.best != null && p.best > 0);
+    const scaled = {};
+    keys.forEach(k=>{
+      const s = ANNEAL.series[k];
+      const span = s.coarseIters || s.polishStart || Math.max(1, ...s.pts.map(p=>p.x));
+      scaled[k] = { pts: s.pts.map(p=> ({ ...p, x: 100*p.x/span })), polish: s.polishStart != null ? 100*s.polishStart/span : null };
+    });
+    const all = keys.flatMap(k => scaled[k].pts).filter(p => p.best != null && p.best > 0);
     if(!all.length) annealEmpty(ctx, W, H, 'No samples yet');
     else {
       const xMax = Math.max(...all.map(p=>p.x));
-      const { X, Y, pad } = annealAxes(ctx, W, H, xMax, Math.min(...all.map(p=>p.best)), Math.max(...all.map(p=>p.best)), 0);
+      const ticks = xMax > 112 ? [0, 100, xMax] : [0, xMax];
+      const { X, Y, pad } = annealAxes(ctx, W, H, xMax, Math.min(...all.map(p=>p.best)), Math.max(...all.map(p=>p.best)), 0,
+                                       { label:'% of search stage', ticks, fmt: v=> Math.round(v)+'%' });
       keys.forEach(k=>{
-        const s = ANNEAL.series[k], color = (PATTERN_META[k]||{color:'#888'}).color;
-        if(s.polishStart != null) annealVLine(ctx, X(s.polishStart), pad, H, color+'88');
-        annealLine(ctx, s.pts, X, Y, 'best', color, k === ANNEAL.selected ? 2.4 : 1.5);
+        const color = (PATTERN_META[k]||{color:'#888'}).color;
+        if(scaled[k].polish != null) annealVLine(ctx, X(scaled[k].polish), pad, H, color+'88');
+        annealLine(ctx, scaled[k].pts, X, Y, 'best', color, k === ANNEAL.selected ? 2.4 : 1.5);
       });
       ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
       keys.forEach((k, i)=>{ const m = PATTERN_META[k]||{label:k, color:'#888'}; ctx.fillStyle = m.color; ctx.fillText(m.label, W-14, pad.t+2+i*12); });
@@ -3661,6 +3705,12 @@ function blobToBase64(blob){
 // Resolves to the saved path/name, or null if the person cancelled.
 async function saveBlob(filename, blob){
   if(isDesktopBuild()) return window.pywebview.api.save_file(filename, await blobToBase64(blob));
+  if(window.pywebview){
+    // In the desktop window a download link would replace the whole page
+    // with the file's contents, so never fall through to it there.
+    alert('Saving isn\'t available in this window. Please quit and restart the app, then try again.');
+    return null;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   setTimeout(()=> URL.revokeObjectURL(a.href), 60000);

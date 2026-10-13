@@ -74,6 +74,59 @@ class Api:
             Path(path).write_bytes(base64.b64decode(data_b64))
         return path
 
+    # ── Measured-data folder import ──
+    # WebKit (the macOS webview) supports neither the File System Access
+    # folder picker nor <input webkitdirectory> folder selection -- its file
+    # panel just navigates into folders -- so the page asks for the folder
+    # here, natively, and reads the measurement files back through
+    # read_data_file. Reads are limited to the folder picked last.
+    _data_root = None
+    _FRF_SUFFIXES = ('.trf', '.trv', '.avr', '.avc')
+
+    def pick_data_folder(self):
+        """Native folder picker + the page's scan rule: the picked folder and
+        each folder directly inside it count as a run if they contain a TRF/
+        subfolder. Returns {root, runs: [{name, files: [path, ...]}]} or None
+        if cancelled."""
+        folder = webview.FileDialog.FOLDER if hasattr(webview, 'FileDialog') else webview.FOLDER_DIALOG
+        res = self._window.create_file_dialog(folder)
+        if not res:
+            return None
+        root = Path(res if isinstance(res, str) else res[0]).resolve()
+        self._data_root = root
+
+        def run_files(d):
+            try:
+                trf = next((c for c in d.iterdir() if c.is_dir() and c.name.upper() == 'TRF'), None)
+                if trf is None:
+                    return None
+                return sorted(str(f) for f in trf.iterdir()
+                              if f.is_file() and f.suffix.lower() in self._FRF_SUFFIXES)
+            except OSError:
+                return None
+
+        runs = []
+        files = run_files(root)
+        if files is not None:
+            runs.append({'name': root.name, 'files': files})
+        try:
+            children = sorted(root.iterdir(), key=lambda c: c.name.lower())
+        except OSError:
+            children = []
+        for d in children:
+            if d.is_dir() and not d.name.startswith('.') and d.name.upper() != 'TRF':
+                files = run_files(d)
+                if files is not None:
+                    runs.append({'name': d.name, 'files': files})
+        return {'root': root.name, 'runs': runs}
+
+    def read_data_file(self, path):
+        """Base64 contents of one measurement file inside the picked folder."""
+        p = Path(path).resolve()
+        if self._data_root is None or self._data_root not in p.parents or p.suffix.lower() not in self._FRF_SUFFIXES:
+            raise PermissionError('only measurement files inside the selected data folder can be read')
+        return base64.b64encode(p.read_bytes()).decode('ascii')
+
     def export_step(self, payload_json, filename):
         """Build a solved design as STEP solids (see cad_export.py) and write
         it, plus the page's simulation-info JSON alongside it as
