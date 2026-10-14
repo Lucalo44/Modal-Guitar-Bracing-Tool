@@ -332,14 +332,14 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <option value="isotropic">Isotropic (legacy, direction-independent)</option>
         <option value="custom">Custom</option>
       </select>
-      <div class="param-row inline"><label>Along-grain modulus Eₗ (GPa)</label><input type="number" id="geoE" value="11"></div>
-      <div class="param-row inline"><label>Across-grain modulus Eᵣ (GPa)</label><input type="number" id="geoEy" value="0.73" step="0.01"></div>
-      <div class="param-row inline"><label>Shear modulus G_LR (GPa)</label><input type="number" id="geoGxy" value="0.69" step="0.01"></div>
-      <div class="param-row inline"><label>Poisson's ratio ν_LR</label><input type="number" id="geoNu" value="0.37" step="0.01"></div>
-      <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="420"></div>
+      <div class="param-row inline"><label>Along-grain modulus Eₗ (GPa)</label><input type="number" id="geoE" value="9.79" step="0.01"></div>
+      <div class="param-row inline"><label>Across-grain modulus Eᵣ (GPa)</label><input type="number" id="geoEy" value="1.25" step="0.01"></div>
+      <div class="param-row inline"><label>Shear modulus G_LR (GPa)</label><input type="number" id="geoGxy" value="1.21" step="0.01"></div>
+      <div class="param-row inline"><label>Poisson's ratio ν_LR</label><input type="number" id="geoNu" value="0.422" step="0.001"></div>
+      <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="350"></div>
       <div class="sbar-hint">Assumes grain runs along length of plate. See Documentation for the model and where its numbers come from.</div>
       <label>Edge boundary condition</label>
-      <select id="geoBC"><option value="ss">Simply supported (glued to rim)</option><option value="free">Free (unsupported reference)</option></select>
+      <select id="geoBC"><option value="ss">Simply supported (edge can rotate)</option><option value="clamped">Clamped (edge fixed; matches a CAD "fixed support")</option><option value="free">Free (unsupported reference)</option></select>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">Strength constraint</div>
@@ -349,8 +349,13 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="sbar-hint">Set torque to 0 for a pure vertical load. See Documentation for model.</div>
       <div class="sbar-hint">Trace the actual bridge footprint with the ▱ Bridge tool above, or use "Reset bridge to rectangle" below for a quick starting shape, then drag its corners to match.</div>
       <div class="param-row inline"><label>Rectangle length (mm)</label><input type="number" id="bridgeLenMm" value="155"></div>
-      <div class="param-row inline"><label>Rectangle depth (mm)</label><input type="number" id="bridgeDepthMm" value="12"></div>
+      <div class="param-row inline"><label>Rectangle depth (mm)</label><input type="number" id="bridgeDepthMm" value="28"></div>
       <button class="btn" id="resetBridgeRectBtn">Reset bridge to rectangle</button>
+      <div class="check-row" style="margin-top:10px"><input type="checkbox" id="bridgeStructural" checked><label style="margin:0">Include the bridge's stiffness and mass</label></div>
+      <div class="param-row inline"><label>Bridge height (mm)</label><input type="number" id="bridgeHeightMm" value="9" step="0.5" min="1"></div>
+      <div class="param-row inline"><label>Bridge wood E (GPa)</label><input type="number" id="bridgeEGPa" value="12" step="0.5" min="1"></div>
+      <div class="param-row inline"><label>Bridge wood density (kg/m³)</label><input type="number" id="bridgeRho" value="850" step="10" min="100"></div>
+      <div class="sbar-hint">The bridge is modelled as a hardwood block glued over the footprint above, on the outside of the top (rosewood-like defaults). It stiffens the top where the strings pull and adds its mass.</div>
     </div>
     <div class="sbar-section">
       <div class="sbar-title">What's actually reachable?</div>
@@ -439,8 +444,8 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <tbody>
           <tr>
             <td style="padding:4px 0">Spruce</td>
-            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceE" value="10" step="0.5" style="width:58px; text-align:right"></td>
-            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceRho" value="420" step="10" style="width:64px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceE" value="9.79" step="0.01" style="width:58px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceRho" value="350" step="10" style="width:64px; text-align:right"></td>
           </tr>
           <tr>
             <td style="padding:4px 0">Carbon fiber</td>
@@ -476,14 +481,14 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
     <div class="sbar-section">
       <div class="sbar-title">Brace material</div>
       <select id="braceMatPreset">
-        <option value="spruce">Sitka spruce (E=10 GPa, ρ=420)</option>
+        <option value="spruce">Spruce (E=9.79 GPa, ρ=350)</option>
         <option value="maple">Maple (E=12.6 GPa, ρ=630)</option>
         <option value="mahogany">Mahogany (E=8.7 GPa, ρ=550)</option>
         <option value="carbon">Carbon-fiber reinforced (E=60 GPa, ρ=700)</option>
         <option value="custom">Custom</option>
       </select>
-      <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="10" step="0.5"></div>
-      <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="420" step="10"></div>
+      <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="9.79" step="0.01"></div>
+      <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="350" step="10"></div>
       <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
     </div>
     <div class="sbar-section" data-open>
@@ -525,15 +530,15 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <input type="range" id="manualWidth" min="1.5" max="20" step="0.5" value="8"></div>
         <select id="manualMatPreset" style="margin-top:4px">
           <option value="">— material starting point —</option>
-          <option value="spruce">Spruce (E=10, ρ=420)</option>
+          <option value="spruce">Spruce (E=9.79, ρ=350)</option>
           <option value="maple">Maple (E=12.6, ρ=630)</option>
           <option value="mahogany">Mahogany (E=8.7, ρ=550)</option>
           <option value="carbon">Carbon fibre (E=60, ρ=700)</option>
         </select>
-        <div class="param-row"><label>Young's modulus <span id="manualEVal">10.0 GPa</span></label>
-          <input type="range" id="manualBraceE" min="1" max="140" step="0.5" value="10"></div>
-        <div class="param-row"><label>Density <span id="manualRhoVal">420 kg/m³</span></label>
-          <input type="range" id="manualBraceRho" min="100" max="1700" step="10" value="420"></div>
+        <div class="param-row"><label>Young's modulus <span id="manualEVal">9.8 GPa</span></label>
+          <input type="range" id="manualBraceE" min="1" max="140" step="0.01" value="9.79"></div>
+        <div class="param-row"><label>Density <span id="manualRhoVal">350 kg/m³</span></label>
+          <input type="range" id="manualBraceRho" min="100" max="1700" step="10" value="350"></div>
         <button class="btn danger" id="manualDeleteBraceBtn" style="margin-top:6px; display:none">✕ Delete selected brace</button>
       </div>
       <div class="sbar-section" data-open style="flex:1; display:flex; flex-direction:column; min-height:0;">
@@ -625,8 +630,9 @@ const MS = { compositeFreq:null, compositeMagDb:null, modes:[] };
 // modes: [{id,use,label,freq,tol,weight,matchShape,nodeAmp:{label:val}}]
 const GEO = {
   outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.1332, bridge:{fx:0.63, fy:0.5},
-  bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:12,
-  Lx:0.508, Ly:0.394, h:0.0028, E:11e9, Ey:0.73e9, Gxy:0.69e9, rho:420, nu:0.37, bcMode:'ss',
+  bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:28,
+  bridgeStructural:true, bridgeHeightMm:9, bridgeE:12e9, bridgeRho:850,
+  Lx:0.508, Ly:0.394, h:0.0028, E:9.79e9, Ey:1.25e9, Gxy:1.21e9, rho:350, nu:0.422, bcMode:'ss',
   loadN:300, bridgeTorqueNmm:10000, deflLimitMm:2, traceMode:'outline', bgImage:null
 };
 /* A rectangle (length across the width, depth along the length) is a
@@ -734,14 +740,14 @@ document.getElementById('helpBtn').onclick = ()=>{
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 1 — Setup</h4>
   <p><b>The material model of this solver is orthotropic</b> (direction-dependent), not a single isotropic modulus. Real world materials 
-  like spruce are roughly 15× stiffer along the grain than across it, which has a large impact on plate behavior and vibration transfer.
+  like spruce are roughly 8–15× stiffer along the grain than across it, which has a large impact on plate behavior and vibration transfer.
   The governing equation has three independent stiffness terms instead of one:
   </p><p style="text-align:center; font-style:italic">D₁₁·w,<sub>xxxx</sub> + 2(D₁₂+2D₆₆)·w,<sub>xxyy</sub> + D₂₂·w,<sub>yyyy</sub> = q</p>
   <p>where D₁₁, D₂₂ come from the along-grain and across-grain moduli (Eₗ, Eᵣ), D₆₆ from the shear modulus (G_LR), and D₁₂
   from the major Poisson's ratio (ν_LR) — the minor ratio ν_RL is always derived from reciprocity (ν_LR/Eₗ = ν_RL/Eᵣ),
   never set independently. <b>Grain is assumed to run along the plate's length</b> (a traced body that's rotated relative to true
-  grain direction isn't accounted for). The default Sitka spruce and cedar ratios (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16) are the
-  values commonly cited in the literature. Treat them as a reasonable starting point, editable if you have better numbers for your material.</p>
+  grain direction isn't accounted for). The default spruce (Eₗ 9.79, Eᵣ 1.25, G_LR 1.21 GPa, ν_LR 0.422, ρ 350 kg/m³) matches the
+  spruce in the ANSYS model the solver is validated against; the cedar preset uses ratios commonly cited in the literature (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16). Treat them as a reasonable starting point, editable if you have better numbers for your material.</p>
   <p>Discretization is finite-difference: three directional second-derivative operators, each
   squared before being combined. This was validated against the known closed-form solution for a simply-supported rectangular orthotropic plate
   (Navier's series solution) before being used on real traced bodies — matched to within about 1% across the first several
@@ -1603,10 +1609,10 @@ document.getElementById('outlinePreset').onchange = e=>{
   };
 });
 const MAT_PRESETS = {
-  // Ratios are the standard along/across-grain values used in guitar
-  // acoustics literature (E_R/E_L ~ 1/15, G_LR/E_L ~ 1/16 for spruce;
-  // similar order for cedar) -- see Documentation for sourcing.
-  spruce:    {E:11,  Ey:0.73, Gxy:0.69, nu:0.37},
+  // Spruce matches the orthotropic spruce in the ANSYS model the solver
+  // is validated against. Cedar uses the along/across-grain ratios common
+  // in guitar acoustics literature (E_R/E_L ~ 1/15, G_LR/E_L ~ 1/16).
+  spruce:    {E:9.79, Ey:1.25, Gxy:1.21, nu:0.422, rho:350},
   cedar:     {E:8,   Ey:0.53, Gxy:0.50, nu:0.37},
   isotropic: {E:11,  Ey:11,   Gxy:11/(2*(1+0.30)), nu:0.30},
 };
@@ -1617,6 +1623,7 @@ document.getElementById('matPreset').onchange = e=>{
   document.getElementById('geoGxy').value = p.Gxy;
   document.getElementById('geoNu').value = p.nu;
   GEO.E = p.E*1e9; GEO.Ey = p.Ey*1e9; GEO.Gxy = p.Gxy*1e9; GEO.nu = p.nu;
+  if (p.rho) { document.getElementById('geoRho').value = p.rho; GEO.rho = p.rho; }
 };
 ['geoE','geoEy','geoGxy','geoRho','geoNu'].forEach(id=> document.getElementById(id).oninput = ()=>{
   GEO.E = +document.getElementById('geoE').value*1e9;
@@ -1631,6 +1638,10 @@ document.getElementById('bridgeTorque').oninput = e=> GEO.bridgeTorqueNmm = +e.t
 document.getElementById('deflLimit').oninput = e=> GEO.deflLimitMm = +e.target.value;
 document.getElementById('bridgeLenMm').oninput = e=>{ GEO.bridgeLenMm = +e.target.value; };
 document.getElementById('bridgeDepthMm').oninput = e=>{ GEO.bridgeDepthMm = +e.target.value; };
+document.getElementById('bridgeStructural').onchange = e=>{ GEO.bridgeStructural = e.target.checked; };
+document.getElementById('bridgeHeightMm').oninput = e=>{ GEO.bridgeHeightMm = +e.target.value; };
+document.getElementById('bridgeEGPa').oninput = e=>{ GEO.bridgeE = +e.target.value*1e9; };
+document.getElementById('bridgeRho').oninput = e=>{ GEO.bridgeRho = +e.target.value; };
 
 GEO.outlineClosed = false;
 GEO.imgScale = 1; GEO.imgOffsetX = 0; GEO.imgOffsetY = 0;
@@ -2039,7 +2050,7 @@ document.getElementById('checkBareModesBtn').onclick = ()=>{
 window.onOptimizerProgress = (label, it, iters, bestCost, freqsJson, deflMm)=>{
   const pct = Math.round(100*it/Math.max(1,iters));
   document.getElementById('genProgressFill').style.width = pct+'%';
-  const freqs = JSON.parse(freqsJson).map(f=>f.toFixed(1)).join(', ');
+  const freqs = JSON.parse(freqsJson).map(f=> f==null ? '—' : f.toFixed(1)).join(', ');
   appendLog(`[${label}] ${it}/${iters}  best_cost=${bestCost.toFixed(2)}  freqs=[${freqs}]  defl=${deflMm!=null?deflMm.toFixed(3)+'mm':'—'}`);
 };
 /* ============================================================
@@ -2300,6 +2311,7 @@ function buildGeoPayload(GN){
     bcMode: GEO.bcMode, outline: GEO.outlinePts, holeCx: GEO.holeCx, holeCy: GEO.holeCy, holeR: GEO.holeR,
     bridgeFx: c.fx, bridgeFy: c.fy, loadN: GEO.loadN, bridgeTorqueNmm: GEO.bridgeTorqueNmm, GN,
     bridgePts: GEO.bridgePts, bridgeLenMm: GEO.bridgeLenMm, bridgeDepthMm: GEO.bridgeDepthMm,
+    bridgeStructural: GEO.bridgeStructural !== false, bridgeHeightMm: GEO.bridgeHeightMm, bridgeE: GEO.bridgeE, bridgeRho: GEO.bridgeRho,
     braceSegMm: +document.getElementById('braceSegMm').value || 10,
   };
 }
@@ -2415,7 +2427,7 @@ function onManualPropChange(){
   document.getElementById(id).addEventListener('input', onManualPropChange);
 });
 (function(){
-  const presets = { spruce:{E:10,rho:420}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
+  const presets = { spruce:{E:9.79,rho:350}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
   document.getElementById('manualMatPreset').onchange = function(){
     const p = presets[this.value]; if(!p) return;
     document.getElementById('manualBraceE').value = p.E;
@@ -2744,7 +2756,7 @@ document.getElementById('manualImportInput').onchange = async e=>{
       type: b.type || 'line', pts: b.pts.map(p=>({...p})), cp: b.cp ? {...b.cp} : null,
       height: b.height, heightTip: b.heightTip ?? b.height,
       width: b.width, widthTip: b.widthTip ?? b.width,
-      modulus: b.modulus || 10e9, density: b.density || 420,
+      modulus: b.modulus || 9.79e9, density: b.density || 350,
       color: b.color || MANUAL_COLORS[(MANUAL.nextId)%MANUAL_COLORS.length],
     }));
     MANUAL.selectedId = null;
@@ -2779,7 +2791,7 @@ window.onManualEvalDone = (jsonStr)=>{
   if(!PATTERN_META['manual']) PATTERN_META['manual'] = { label:'Hand-drawn', color:'#9b7fc9' };
   const statusEl = document.getElementById('manualEvalStatus');
   if(r.ok){
-    statusEl.textContent = `Done — ${r.freqs.length} modes found${r.massG!=null?', '+r.massG.toFixed(1)+' g':''}. See Results.`;
+    statusEl.textContent = `Done — ${(r.modes||r.freqs).length} modes found${r.massG!=null?', '+r.massG.toFixed(1)+' g':''}. See Results.`;
     statusEl.className='status ok';
   } else {
     statusEl.textContent = 'Solve failed — check the outline and braces.'; statusEl.className='status err';
@@ -2822,7 +2834,7 @@ document.getElementById('genNovelExperimental').onchange = e=>{
 document.getElementById('genCustom').onchange = e=>{
   document.getElementById('customPatternSettings').style.display = e.target.checked ? 'block' : 'none';
 };
-const BRACE_MAT_PRESETS = { spruce:{E:10,rho:420}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
+const BRACE_MAT_PRESETS = { spruce:{E:9.79,rho:350}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
 document.getElementById('braceMatPreset').onchange = e=>{
   const p = BRACE_MAT_PRESETS[e.target.value]; if(!p) return;
   document.getElementById('braceE').value = p.E; document.getElementById('braceRho').value = p.rho;
@@ -2922,8 +2934,9 @@ function scorePattern(res){
     const over = Math.max(0, Math.abs(f-t.freq)-t.tol);
     cost += t.weight * Math.pow(over/Math.max(1,t.freq),2)*400;
   });
+  (res.hiddenStrong||[]).forEach(h=>{ cost += 6*Math.pow(Math.min(1,h.rel) - 0.4, 2); });
   const over = Math.max(0, res.deflBridgeMm/Math.max(0.05,GEO.deflLimitMm) - 1);
-  cost += over*over*300;
+  if(over > 0) cost += 1e4 + 3000*Math.tanh(over/3);   // same shape as engine.py deflection_cost
   cost += (+document.getElementById('massWeight').value||0.15) * (res.massG/40);
   return cost;
 }
@@ -2980,17 +2993,24 @@ function renderResults(){
               const good = err!=null && err<=t.tol;
               return `<div class="metric-row"><span>target ${t.freq.toFixed(0)}±${t.tol.toFixed(0)}Hz</span><span class="v ${f==null?'bad':(good?'good':'bad')}">${f!=null?f.toFixed(1)+' Hz':'missing'}</span></div>`;
             }).join('')}
+            ${res.ok && res.hiddenStrong && res.hiddenStrong.length ? `<div class="metric-row"><span>Strong modes not on a target</span><span class="v bad">${res.hiddenStrong.map(h=>h.freq.toFixed(0)+' Hz').join(', ')}</span></div>` : ''}
+            ${res.ok && res.modes && res.modes.length ? `<div class="tag-note" style="margin-top:4px" title="Strength = how big a peak the mode makes when the bridge is driven, relative to the strongest mode. Targets are matched to the strongest modes; weak modes in between are ignored.">Modes in band (strength): ${res.modes.map(m=>`${m.target!=null?'<b>':''}${m.freq.toFixed(0)} Hz (${Math.round(m.strength*100)}%)${m.target!=null?'</b>':''}`).join(' · ')}. Bold = matched to a target.</div>` : ''}
             <div class="metric-row"><span>Bridge deflection (limit ${GEO.deflLimitMm}mm)</span><span class="v ${res.ok?(deflOk?'good':'bad'):'bad'}">${res.ok?res.deflBridgeMm.toFixed(3)+' mm':'—'}</span></div>
             ${res.torqueRequested && !res.torqueResolved ? '<div class="tag-note" style="margin-top:6px">⚠ Bridge torque had no effect here — the bridge footprint is shallower than this grid can resolve, so there was no room to apply a moment across it.</div>' : ''}
             <div class="metric-row"><span>Added brace mass</span><span class="v">${res.ok?res.massG.toFixed(1)+' g':'—'}</span></div>
+            ${res.ok && res.bridgeMassG ? `<div class="metric-row"><span>Bridge mass (included in the model)</span><span class="v">${res.bridgeMassG.toFixed(1)} g</span></div>` : ''}
             <div class="metric-row"><span>Composite score (lower=better)</span><span class="v">${isFinite(scores[key])?scores[key].toFixed(1):'—'}</span></div>
           </div>
           ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces) : ''}
-          ${res.ok && res.freqs && res.freqs.length && res.fieldShapes ? `
+          ${res.ok && res.fieldShapes && res.fieldShapes.length ? `
           <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border2)">
             <div class="sbar-title" style="margin-bottom:6px">Mode shape (3D)</div>
             <select class="mode3DSelect" data-key="${key}" style="margin:0 0 6px">
-              ${res.freqs.map((f,i)=>`<option value="${i}">Mode ${i+1} — ${f.toFixed(1)} Hz</option>`).join('')}
+              ${(res.modes && res.modes.length ? res.modes : res.freqs.filter(f=>f!=null).map(f=>({freq:f}))).map((m,i)=>{
+                const tag = m.target!=null && targets[m.target] ? ` · target ${targets[m.target].freq.toFixed(0)} Hz`
+                          : (m.strength!=null ? ` · ${Math.round(m.strength*100)}% strength` : '');
+                return `<option value="${i}">Mode ${i+1} — ${m.freq.toFixed(1)} Hz${tag}</option>`;
+              }).join('')}
             </select>
             <div class="pattern-canvas-wrap" style="height:480px; position:relative;">
               <div id="anim3dContainer_${key}" style="width:100%; height:100%;"></div>
@@ -3659,8 +3679,8 @@ function buildVisualizerFormatProject(key){
       bcMode: GEO.bcMode, edgeKs: 0,
     },
     hifi: {
-      GN: null, freqs: res.freqs||[], solveTime: 0,
-      hasResults: !!(res.freqs && res.freqs.length),
+      GN: null, freqs: (res.freqs||[]).filter(f=>f!=null), solveTime: 0,
+      hasResults: !!(res.freqs && res.freqs.some(f=>f!=null)),
     },
     traceShape: {
       outlinePts: GEO.outlinePts.map(swapXY),
@@ -3739,8 +3759,19 @@ function cadHoleMm(){
   if(!(GEO.holeR > 0.001)) return null;
   return { x: GEO.holeCx*GEO.Lx*1000, y: GEO.holeCy*GEO.Ly*1000, r: GEO.holeR*Math.min(GEO.Lx, GEO.Ly)*1000 };
 }
+function cadBridgeMm(){
+  if(GEO.bridgeStructural === false || !(GEO.bridgeHeightMm > 0)) return null;
+  const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
+  let pts;
+  if(GEO.bridgePts.length >= 3) pts = GEO.bridgePts.map(p=>[p.fx*LxMm, p.fy*LyMm]);
+  else {
+    const c = bridgeCentroid(), hd = GEO.bridgeDepthMm/2, hl = GEO.bridgeLenMm/2, cx = c.fx*LxMm, cy = c.fy*LyMm;
+    pts = [[cx-hd,cy-hl],[cx+hd,cy-hl],[cx+hd,cy+hl],[cx-hd,cy+hl]];
+  }
+  return { footprint: pts, heightMm: GEO.bridgeHeightMm, E: GEO.bridgeE, density: GEO.bridgeRho };
+}
 function cadBraces(res){
-  const E = +document.getElementById('braceE').value*1e9 || 10e9, rho = +document.getElementById('braceRho').value || 420;
+  const E = +document.getElementById('braceE').value*1e9 || 9.79e9, rho = +document.getElementById('braceRho').value || 350;
   return (res.braces||[]).map(b=> ({ ...b, modulus: b.modulus || E, density: b.density || rho }));
 }
 // Mirrors cad_export.py's per-material body naming.
@@ -3768,7 +3799,7 @@ function designSimulationInfo(key, res){
     axes: {
       x: 'body length (Lx); the solver assumes the top\'s grain runs along x',
       y: 'body width (Ly)',
-      z: 'plate normal; braces sit on the +z face',
+      z: 'plate normal; braces sit on the +z face (inside of the top), the bridge on the -z face',
       origin: 'corner of the outline\'s bounding box',
     },
     plate: {
@@ -3777,8 +3808,14 @@ function designSimulationInfo(key, res){
       outline_mm: cadOutlineMm(),
       sound_hole_mm: cadHoleMm(),
       material: { type: 'orthotropic', E_L_along_x: GEO.E, E_R_along_y: GEO.Ey, G_LR: GEO.Gxy, nu_LR: GEO.nu, density: GEO.rho },
-      edge_condition: GEO.bcMode === 'ss' ? 'simply supported along the outline (zero deflection, free rotation)' : 'free (unsupported)',
+      edge_condition: ({ ss: 'simply supported along the outline (zero deflection, free rotation)',
+                         clamped: 'clamped along the outline (zero deflection and zero rotation, i.e. a fixed support)',
+                         free: 'free (unsupported)' })[GEO.bcMode] || GEO.bcMode,
+      sound_hole_edge: 'free',
     },
+    bridge: cadBridgeMm() ? { body: 'bridge', side: '-z face (outside of the top)', footprint_mm: cadBridgeMm().footprint,
+                              height_mm: GEO.bridgeHeightMm, material: { E: GEO.bridgeE, density: GEO.bridgeRho }, mass_g: res.bridgeMassG ?? null }
+                          : null,
     load: {
       bridge_footprint_mm: bridge,
       vertical_load_N: GEO.loadN,
@@ -3795,7 +3832,11 @@ function designSimulationInfo(key, res){
       material: { E: b.modulus, density: b.density },
     })),
     predicted_by_this_tool: {
-      mode_frequencies_Hz: res.freqs,
+      matched_to_targets_Hz: (buildTargetsPayload()).map((t,i)=> ({ target_Hz: t.freq, mode_Hz: res.freqs[i] ?? null })),
+      all_modes_in_band: (res.modes||[]).map(m=> ({ freq_Hz: m.freq, relative_strength: m.strength,
+                                                    matched_target_Hz: m.target!=null ? (buildTargetsPayload()[m.target]||{}).freq ?? null : null })),
+      strong_modes_not_on_a_target_Hz: (res.hiddenStrong||[]).map(h=>h.freq),
+      strength_definition: 'peak size of the mode in the plate response to a force on the bridge (equal damping assumed), relative to the strongest mode in the band',
       bridge_deflection_mm: res.deflBridgeMm,
       max_deflection_mm: res.deflMaxMm,
       brace_mass_g: res.massG,
@@ -3803,6 +3844,7 @@ function designSimulationInfo(key, res){
     notes: [
       'Braces are modelled as rectangular sections (with taper) bonded to the plate; real profiles (peaked, scalloped) will differ.',
       'The top plate is flat; any doming is not represented.',
+      'The bridge is a separate body on the -z face (outside of the top), bonded over its footprint.',
       'In the STEP file, braces of one material are fused into a single body and trimmed to the plate outline and sound hole; the STL contains each brace as its own (possibly overlapping) shell.',
     ],
   };
@@ -3875,6 +3917,24 @@ function buildDesignSTL(res){
     });
   });
 
+  const bridge = cadBridgeMm();
+  if(bridge){
+    let ring = bridge.footprint.slice(); if(area(ring) < 0) ring.reverse();
+    const hb = bridge.heightMm, rb = V2(ring);
+    THREE.ShapeUtils.triangulateShape(rb, []).forEach(([i,j,k])=>{
+      const A=ring[i], B=ring[j], C=ring[k];
+      const up = ((B[0]-A[0])*(C[1]-A[1]) - (B[1]-A[1])*(C[0]-A[0])) > 0;
+      const [P,Q,R] = up ? [A,B,C] : [A,C,B];
+      tri([P[0],P[1],0], [Q[0],Q[1],0], [R[0],R[1],0]);       // glued face (+z)
+      tri([P[0],P[1],-hb], [R[0],R[1],-hb], [Q[0],Q[1],-hb]);  // outer face (-z)
+    });
+    ring.forEach((p,i)=>{
+      const q = ring[(i+1)%ring.length];
+      tri([p[0],p[1],-hb], [q[0],q[1],-hb], [q[0],q[1],0]);
+      tri([p[0],p[1],-hb], [q[0],q[1],0], [p[0],p[1],0]);
+    });
+  }
+
   const buf = new ArrayBuffer(84 + 50*tris.length), dv = new DataView(buf);
   const header = 'Bracing Studio design, units mm, x = body length (grain), z = plate normal';
   for(let i=0;i<Math.min(80, header.length);i++) dv.setUint8(i, header.charCodeAt(i));
@@ -3899,7 +3959,7 @@ async function exportPatternSTEP(key){
   cadStatus(key, 'Building STEP solids… (choose where to save first)', 'warn');
   try{
     const payload = { LxMm: GEO.Lx*1000, LyMm: GEO.Ly*1000, hMm: GEO.h*1000, outline: cadOutlineMm(), hole: cadHoleMm(),
-                      braces: cadBraces(res), simulationInfo: designSimulationInfo(key, res) };
+                      braces: cadBraces(res), bridge: cadBridgeMm(), simulationInfo: designSimulationInfo(key, res) };
     const r = await window.pywebview.api.export_step(JSON.stringify(payload), cadFileBase(key)+'.step');
     if(r && r.ok) cadStatus(key, `STEP saved with ${r.bodies.map(b=>b.name).join(', ')}, plus simulation info next to it.`, 'ok');
     else if(r && r.cancelled) cadStatus(key, 'Save cancelled.', 'warn');
@@ -4185,6 +4245,16 @@ document.getElementById('loadProjectInput').onchange = async e=>{
     document.getElementById('geoGxy').value = (GEO.Gxy/1e9).toFixed(2);
     document.getElementById('geoNu').value = GEO.nu;
     document.getElementById('geoRho').value = GEO.rho;
+    document.getElementById('geoBC').value = GEO.bcMode;
+    document.getElementById('loadN').value = GEO.loadN;
+    document.getElementById('bridgeTorque').value = GEO.bridgeTorqueNmm;
+    document.getElementById('deflLimit').value = GEO.deflLimitMm;
+    document.getElementById('bridgeLenMm').value = GEO.bridgeLenMm;
+    document.getElementById('bridgeDepthMm').value = GEO.bridgeDepthMm;
+    document.getElementById('bridgeStructural').checked = GEO.bridgeStructural !== false;
+    document.getElementById('bridgeHeightMm').value = GEO.bridgeHeightMm;
+    document.getElementById('bridgeEGPa').value = GEO.bridgeE/1e9;
+    document.getElementById('bridgeRho').value = GEO.bridgeRho;
     renderNodeTable(); renderModeTable(); forceGeoRedraw(); drawSpectrum(); renderResults();
     if(materialFellBackToIsotropic){
       showBadge('Project loaded — this save predates the orthotropic material fields, so Eᵣ/G_LR fell back to isotropic (Eᵣ=Eₗ). Re-enter the real across-grain values in Plate & Load if this design was meant to be anisotropic.', 'warn');

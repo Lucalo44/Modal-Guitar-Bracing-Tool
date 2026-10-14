@@ -8,6 +8,8 @@ them properly:
   * top_plate -- the traced outline (the same Catmull-Rom spline the UI
     draws, sent as dense points and re-interpolated here as a periodic
     B-spline), extruded to the plate thickness, sound hole cut out.
+  * bridge -- the bridge block (when the model includes it): its footprint
+    extruded bridgeHeightMm on the -z face, i.e. the outside of the top.
   * braces_<material> -- every brace's tapered rectangular cross-section
     lofted along its centreline (straight, quadratic or cubic Bezier, same
     sampling as engine._sample_brace), sitting on the plate's +z face,
@@ -16,7 +18,7 @@ them properly:
 
 Coordinates are mm: x along the body length (Lx, the grain direction the
 solver assumes), y across the width (Ly), z normal to the plate. The braced
-face is +z. Same frame as the STL export and the simulation-info JSON.
+face is +z (inside); the bridge sits on the -z face (outside). Same frame as the STL export and the simulation-info JSON.
 """
 import math
 
@@ -127,7 +129,7 @@ def build_design_shapes(payload):
 
     groups = {}   # (E, rho) -> fused solid
     for b in payload['braces']:
-        key = (round(float(b.get('modulus', 10e9)) / 1e9, 2), round(float(b.get('density', 420.0))))
+        key = (round(float(b.get('modulus', 9.79e9)) / 1e9, 2), round(float(b.get('density', 350.0))))
         solid = BRepAlgoAPI_Common(_brace_solid(b, LxMm, LyMm, h), keep).Shape()
         if _volume(solid) <= 1e-6:
             continue
@@ -142,6 +144,14 @@ def build_design_shapes(payload):
         placed = solid if placed is None else BRepAlgoAPI_Fuse(placed, solid).Shape()
         name = f'braces_E{E:g}GPa_rho{rho:g}' if len(groups) > 1 else 'braces'
         shapes.append((name, _clean(solid)))
+    bridge = payload.get('bridge')
+    if bridge and bridge.get('heightMm', 0) > 0 and len(bridge.get('footprint') or []) >= 3:
+        poly = BRepBuilderAPI_MakePolygon()
+        for x, y in bridge['footprint']:
+            poly.Add(gp_Pnt(x, y, 0.0))
+        poly.Close()
+        foot = BRepBuilderAPI_MakeFace(poly.Wire(), True).Face()
+        shapes.append(('bridge', _clean(BRepPrimAPI_MakePrism(foot, gp_Vec(0, 0, -bridge['heightMm'])).Shape())))
     for name, s in shapes:
         if not BRepCheck_Analyzer(s).IsValid():
             raise RuntimeError(f'{name}: generated solid failed validity check')
