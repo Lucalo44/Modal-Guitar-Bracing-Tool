@@ -3003,7 +3003,7 @@ function renderResults(){
             ${res.ok && res.bridgeMassG ? `<div class="metric-row"><span>Bridge mass (included in the model)</span><span class="v">${res.bridgeMassG.toFixed(1)} g</span></div>` : ''}
             <div class="metric-row"><span>Composite score (lower=better)</span><span class="v">${isFinite(scores[key])?scores[key].toFixed(1):'—'}</span></div>
           </div>
-          ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces) : ''}
+          ${res.ok && res.braces && res.braces.length ? renderBraceDimsTable(res.braces, meta.color) : ''}
           ${res.ok && res.fieldShapes && res.fieldShapes.length ? `
           <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border2)">
             <div class="sbar-title" style="margin-bottom:6px">Mode shape (3D)</div>
@@ -3125,22 +3125,31 @@ function braceLengthMm(b, LxMm, LyMm){
   return len;
 }
 
-function renderBraceDimsTable(braces){
+// Material of a solved brace, for labelling and colouring it consistently in
+// the result drawing, the 3D view and the dimensions table. Carbon is drawn
+// near-black; spruce takes the pattern's own colour (null here).
+const CARBON_BRACE_COLOR = '#2b2b2b';
+function braceMaterialOf(b){
+  const eGPa = (b.modulus||0)/1e9;
+  if (eGPa > 60) return {label:'Carbon fiber', color:CARBON_BRACE_COLOR};
+  if (eGPa > 0) return {label:'Spruce', color:null};
+  return {label:'', color:null};
+}
+function bracesHaveMixedMaterials(braces){
+  return !!braces && braces.length>0 && !braces.every(b => Math.abs(b.modulus-braces[0].modulus)<1e3 && Math.abs(b.density-braces[0].density)<0.1);
+}
+
+function renderBraceDimsTable(braces, color){
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
-  const matLabel = (b)=>{
-    const eGPa = b.modulus/1e9;
-    if (eGPa > 60) return 'Carbon fiber';
-    if (eGPa > 0) return 'Spruce';
-    return '';
-  };
-  const allSame = braces.every(b => Math.abs(b.modulus-braces[0].modulus)<1e3 && Math.abs(b.density-braces[0].density)<0.1);
+  const allSame = !bracesHaveMixedMaterials(braces);
   const rows = braces.map((b,i)=>{
     const len = braceLengthMm(b, LxMm, LyMm);
     const wTip = b.widthTip==null ? b.width : b.widthTip;
     const hTip = b.heightTip==null ? b.height : b.heightTip;
     const wStr = Math.abs(wTip-b.width)<0.05 ? b.width.toFixed(1) : `${wTip.toFixed(1)}→${b.width.toFixed(1)}→${wTip.toFixed(1)}`;
     const hStr = Math.abs(hTip-b.height)<0.05 ? b.height.toFixed(1) : `${hTip.toFixed(1)}→${b.height.toFixed(1)}→${hTip.toFixed(1)}`;
-    const matCell = allSame ? '' : `<td>${matLabel(b)}</td>`;
+    const m = braceMaterialOf(b);
+    const matCell = allSame ? '' : `<td><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px;background:${m.color||color||'#2f9fd6'}"></span>${m.label}</td>`;
     return `<tr><td>${i+1}</td><td>${(b.type==='curve'||b.type==='curve3')?'curved':'straight'}</td><td>${len.toFixed(0)}</td><td>${wStr}</td><td>${hStr}</td>${matCell}</tr>`;
   }).join('');
   const mat = allSame && braces[0] ? `E=${(braces[0].modulus/1e9).toFixed(1)} GPa, ρ=${braces[0].density.toFixed(0)} kg/m³` : 'Mixed materials (see table)';
@@ -3226,15 +3235,24 @@ function drawPatternOnCanvas(cvs, res, color, scale){
   }
   if(!res.ok || !res.braces) return;
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
-  res.braces.forEach(b=>{
+  // Mixed-material designs: colour each brace by its material and number it
+  // (same numbering as the dimensions table and the exported simulation info).
+  const mixed = bracesHaveMixedMaterials(res.braces);
+  const labels = [];
+  res.braces.forEach((b,bi)=>{
     const fp = braceFootprintPoints(b, LxMm, LyMm);
-    // Footprint polygon (width, tapered) in the brace's own color.
+    const bcol = (mixed && braceMaterialOf(b).color) || color;
+    // Footprint polygon (width, tapered) in the brace's material/pattern color.
     ctx.beginPath();
     fp.left.forEach((p,i)=>{ const [x,y]=toPx(p.x/LxMm,p.y/LyMm); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     for(let i=fp.right.length-1;i>=0;i--){ const [x,y]=toPx(fp.right[i].x/LxMm,fp.right[i].y/LyMm); ctx.lineTo(x,y); }
     ctx.closePath();
-    ctx.fillStyle = color+'99'; ctx.fill();
-    ctx.strokeStyle = color; ctx.lineWidth=0.8; ctx.stroke();
+    ctx.fillStyle = bcol+'99'; ctx.fill();
+    ctx.strokeStyle = bcol; ctx.lineWidth = mixed ? 1.2 : 0.8; ctx.stroke();
+    if(mixed){
+      const mid = fp.centerline[Math.floor(fp.centerline.length/2)];
+      labels.push({xy:toPx(mid.x/LxMm, mid.y/LyMm), n:bi+1, col:bcol});
+    }
     // Height is invisible from directly above, so hint at it with a
     // centerline whose stroke weight scales with local height.
     ctx.beginPath();
@@ -3244,6 +3262,27 @@ function drawPatternOnCanvas(cvs, res, color, scale){
       ctx.lineWidth = Math.max(0.4, hLocal*0.12);
       if(i===0) ctx.moveTo(x,y); else { ctx.lineTo(x,y); ctx.strokeStyle='rgba(10,9,8,0.55)'; ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y); }
     });
+  });
+  if(!mixed) return;
+  // Numbered badges on top of every brace, then a legend.
+  ctx.font = '600 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  labels.forEach(({xy:[x,y], n, col})=>{
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#1e1e1e'; ctx.fillText(String(n), x, y+0.5);
+  });
+  const legend = [];
+  res.braces.forEach(b=>{
+    const m = braceMaterialOf(b);
+    if(m.label && !legend.some(l=>l.label===m.label)) legend.push({label:m.label, col:m.color||color});
+  });
+  ctx.textAlign = 'left'; ctx.font = '11px sans-serif';
+  legend.forEach((l,i)=>{
+    const y = 14 + i*16;
+    ctx.fillStyle = l.col+'99'; ctx.fillRect(10, y-5, 14, 10);
+    ctx.strokeStyle = l.col; ctx.lineWidth = 1; ctx.strokeRect(10, y-5, 14, 10);
+    ctx.fillStyle = '#333'; ctx.fillText(l.label, 30, y);
   });
 }
 
@@ -3380,7 +3419,7 @@ function build3DBraceLines(key, modeIdx, scene, braceObjs){
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
     geo._rawZ = rawZ;
-    const mat = new THREE.LineBasicMaterial({color:new THREE.Color('#8a6b3e'), linewidth:2});
+    const mat = new THREE.LineBasicMaterial({color:new THREE.Color(braceMaterialOf(b).color || '#8a6b3e'), linewidth:2});
     const line = new THREE.Line(geo, mat);
     line.renderOrder=1;
     scene.add(line);
