@@ -289,12 +289,49 @@ def _brace_stations(b, Lx, Ly, spacing):
     return xy, np.interp(sq, s, T), L / (n - 1)
 
 BRACE_FLANGE_WIDTH = 20.0   # width of top plate acting with each brace, in plate thicknesses (result is insensitive above ~10)
+BRACE_SHEAR_FACTOR = 5.0/6.0   # Timoshenko shear correction for a rectangular web
 
-def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None):
-    """Each brace as an Euler-Bernoulli beam embedded in the plate: bending
-    energy 0.5*EI*(w'')^2 integrated along its arc length, with w at any point
-    on the brace bilinearly interpolated from the 4 surrounding plate nodes
-    (_bilinear_corners).
+def brace_shear_modulus(b):
+    """Shear modulus a brace resists shear and twist with: the along-grain
+    ones (G_LR, G_LT) for wood cut with its grain along the brace, G_12 for
+    unidirectional carbon. Braces from older projects carry no 'shear';
+    they get a typical E/G for their kind -- about 15 for spruce-like wood,
+    about 27 for unidirectional carbon."""
+    G = b.get('shear')
+    if G:
+        return float(G)
+    E = float(b.get('modulus', 9.79e9))
+    return E / (27.0 if E > 60e9 else 15.0)
+
+def _rect_torsion_constant(w, h):
+    """Saint-Venant torsion constant of a w x h rectangle (Roark)."""
+    a = np.maximum(w, h); c = np.minimum(w, h); r = c / np.maximum(a, 1e-12)
+    return a * c**3 * (1.0/3.0 - 0.21*r*(1.0 - r**4/12.0))
+
+def _assemble_rows(ids, g, coef):
+    """COO pieces of sum_r coef_r * (g_r . u[ids_r])^2 -- one quadratic
+    energy term per row; ids of -1 (not a DOF) are dropped."""
+    m = ids.shape[1]
+    rows = np.broadcast_to(ids[:, :, None], ids.shape + (m,)).ravel()
+    cols = np.broadcast_to(ids[:, None, :], ids.shape[:1] + (m, m)).ravel()
+    vals = (coef[:, None, None] * g[:, :, None] * g[:, None, :]).ravel()
+    keep = (rows >= 0) & (cols >= 0) & (vals != 0)
+    return rows[keep], cols[keep], vals[keep]
+
+def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None):
+    """Each brace as a Timoshenko beam embedded in the plate, plus its
+    resistance to twisting. Returns (K, n_aux): K is (N+n_aux) square, where
+    the n_aux extra unknowns are the braces' shear strains (no mass).
+
+    Bending: energy 0.5*EI*(w'' - gamma')^2 along the arc length, with w at
+    any point on the brace bilinearly interpolated from the 4 surrounding
+    plate nodes (_bilinear_corners). Shear: 0.5*kappa*G*A*gamma^2, gamma
+    living between stations. Eliminating gamma gives the classic Timoshenko
+    softening EI/(1 + EI k^2/(kappa G A)) at wavenumber k along the brace --
+    noticeable for a tall brace in wood (E/G ~ 15) and more so in carbon
+    (~27) -- and as G grows it reduces exactly to the Euler-Bernoulli beam.
+    Twist: 0.5*G*J*(d phi/ds)^2, phi the plate's slope across the brace
+    (the brace is glued down, so it turns with that slope).
 
     Curvature comes from a 3-point second difference between stations spaced
     about one grid spacing apart (_brace_stations) -- deliberately NOT the
@@ -306,6 +343,8 @@ def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=
     the grid, and smooth as a brace moves -- unlike snapping each sample to
     its nearest node, which skipped samples that landed on the same node and
     divided node-spaced differences by the (much smaller) sample spacing.
+    The cross-slope phi is read the same way, from points half a grid
+    spacing either side of the centreline.
 
     A brace is glued ON TOP of the plate, so it bends together with a strip
     of the plate about their shared neutral axis -- a T-section -- not about
@@ -315,24 +354,32 @@ def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=
     own bending, which the plate operator already counts. Without that
     offset a tall brace is several times too soft: checked against a 3D
     ANSYS model of an exported design (clamped edge), the fundamental moved
-    from 15% low to within 1%.
+    from 15% low to within 1%. The web (the brace itself) carries the shear.
 
     Same per-unit-area scaling as the plate operator (hence /dd^2)."""
     dd = grid['dd']; N = grid['N']
-    all_ids, all_g, all_c = [], [], []
+    parts = []
+    n_aux = 0
     for b in braces:
         wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
         modulus = b.get('modulus', 9.79e9)
+        G = brace_shear_modulus(b)
         xy, t, hs = _brace_stations(b, Lx, Ly, dd)
         if xy is None:
             continue
+        n = len(xy)
         ids, W = _bilinear_corners(grid, xy[:, 0], xy[:, 1])
         a = np.array([1.0, -2.0, 1.0]) / (hs*hs)
-        # Interior station k uses stations k-1, k, k+1 -> 12 (node, weight) pairs.
-        k = np.arange(1, len(xy)-1)
-        g_ids = np.concatenate([ids[k-1], ids[k], ids[k+1]], axis=1)
-        g = np.concatenate([a[0]*W[k-1], a[1]*W[k], a[2]*W[k+1]], axis=1)
+        # Shear strains between stations: gamma_j sits between stations j and j+1.
+        gam = N + n_aux + np.arange(n-1)
+        n_aux += n-1
+        # Interior station k uses stations k-1, k, k+1 -> 12 (node, weight)
+        # pairs, plus gamma' from the two strains either side of it.
+        k = np.arange(1, n-1)
+        g_ids = np.concatenate([ids[k-1], ids[k], ids[k+1], gam[k][:, None], gam[k-1][:, None]], axis=1)
+        g = np.concatenate([a[0]*W[k-1], a[1]*W[k], a[2]*W[k+1],
+                            np.full((len(k), 1), -1.0/hs), np.full((len(k), 1), 1.0/hs)], axis=1)
         # Local cross-section at each station, so a tapered brace is
         # correctly softer near its tips and stiffer through its middle.
         wk = _dim_at(wC, wT, t[k]); hk = _dim_at(hC, hT, t[k])
@@ -348,17 +395,31 @@ def brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=
             zb, zf = tp + hk/2.0, tp/2.0              # centroids from the plate's underside
             zn = (modulus*Ab*zb + Ep*Af*zf) / (modulus*Ab + Ep*Af)
             EI = EI + modulus*Ab*(zb-zn)**2 + Ep*Af*(zf-zn)**2
-        all_ids.append(g_ids); all_g.append(g); all_c.append(EI * hs / (dd*dd))
-    if not all_ids:
-        return sparse.csr_matrix((N, N))
-    g_ids = np.concatenate(all_ids); g = np.concatenate(all_g); coef = np.concatenate(all_c)
-    rows = np.broadcast_to(g_ids[:, :, None], g_ids.shape + (12,)).ravel()
-    cols = np.broadcast_to(g_ids[:, None, :], g_ids.shape[:1] + (12, 12)).ravel()
-    vals = (coef[:, None, None] * g[:, :, None] * g[:, None, :]).ravel()
-    keep = (rows >= 0) & (cols >= 0) & (vals != 0)
-    K = sparse.coo_matrix((vals[keep], (rows[keep], cols[keep])), shape=(N, N)).tocsr()
+        parts.append(_assemble_rows(g_ids, g, EI * hs / (dd*dd)))
+        # Shear and twist use the section halfway between stations.
+        tm = 0.5*(t[:-1] + t[1:])
+        wm = _dim_at(wC, wT, tm); hm = _dim_at(hC, hT, tm)
+        parts.append(_assemble_rows(gam[:, None], np.ones((n-1, 1)), BRACE_SHEAR_FACTOR*G*wm*hm * hs / (dd*dd)))
+        # Cross-slope at each station, from points dd/2 either side.
+        tan = np.gradient(xy, axis=0)
+        tan /= np.maximum(np.hypot(tan[:, 0], tan[:, 1]), 1e-30)[:, None]
+        nrm = np.stack([-tan[:, 1], tan[:, 0]], axis=1)
+        dl = 0.5*dd
+        idsP, WP = _bilinear_corners(grid, xy[:, 0] + dl*nrm[:, 0], xy[:, 1] + dl*nrm[:, 1])
+        idsM, WM = _bilinear_corners(grid, xy[:, 0] - dl*nrm[:, 0], xy[:, 1] - dl*nrm[:, 1])
+        p_ids = np.concatenate([idsP, idsM], axis=1); p_w = np.concatenate([WP, -WM], axis=1) / (2.0*dl)
+        j = np.arange(n-1)
+        t_ids = np.concatenate([p_ids[j+1], p_ids[j]], axis=1)
+        t_w = np.concatenate([p_w[j+1], -p_w[j]], axis=1) / hs
+        parts.append(_assemble_rows(t_ids, t_w, G*_rect_torsion_constant(wm, hm) * hs / (dd*dd)))
+    size = N + n_aux
+    if not parts:
+        return sparse.csr_matrix((size, size)), 0
+    rows = np.concatenate([p[0] for p in parts]); cols = np.concatenate([p[1] for p in parts])
+    vals = np.concatenate([p[2] for p in parts])
+    K = sparse.coo_matrix((vals, (rows, cols)), shape=(size, size)).tocsr()
     K.sum_duplicates()
-    return K
+    return K, n_aux
 
 def _spread_to_nodes(grid, xs, ys, weights):
     """Like _map_to_nodes, but splits each point's weight bilinearly over its
@@ -684,7 +745,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
     braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
-    K_brace = brace_bending_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy))
+    K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy))
     # Three separate directional terms, each squared for guaranteed
     # positive-semi-definiteness (same principle the old single-operator
     # isotropic solver relied on, just applied to three simpler
@@ -692,15 +753,21 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # see build_grid's docstring for the validation this went through
     # before being wired in here).
     Lxx, Lyy, Lxy = grid['Lxx'], grid['Lyy'], grid['Lxy']
-    K = D11*(Lxx.T@Lxx) + D22*(Lyy.T@Lyy) + D12*(Lxx.T@Lyy + Lyy.T@Lxx) + 4*D66*(Lxy.T@Lxy) + K_brace
+    K = D11*(Lxx.T@Lxx) + D22*(Lyy.T@Lyy) + D12*(Lxx.T@Lyy + Lyy.T@Lxx) + 4*D66*(Lxy.T@Lxy)
     K_bridge, bridge_m, bridge_mass_g = _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly)
     if K_bridge is not None:
         K = K + K_bridge
     braceM = braceM + bridge_m
+    # The braces' shear strains are extra unknowns after the N plate nodes
+    # (massless, so they never show up as modes); pad the plate's matrices
+    # to match and keep only the first N entries of every solution.
+    pad = lambda A: sparse.block_diag((A, sparse.csr_matrix((n_aux, n_aux))), format='csr') if n_aux else A
+    K = pad(K) + K_brace
     if grid.get('P') is not None:
-        K = K + SS_PIN_PENALTY*float(np.max(K.diagonal())) * (grid['P'].T @ grid['P'])
+        P = grid['P'] if not n_aux else sparse.hstack([grid['P'], sparse.csr_matrix((grid['P'].shape[0], n_aux))])
+        K = K + SS_PIN_PENALTY*float(np.max(K.diagonal())) * (P.T @ P)
     K = (K+K.T)*0.5
-    M = sparse.diags(rho*h*grid['mass_scale'] + braceM)
+    M = sparse.diags(np.concatenate([rho*h*grid['mass_scale'] + braceM, np.zeros(n_aux)]))
 
     # ── Eigenmodes ──
     # Enough modes to cover the whole target band (up to 1.3x the highest
@@ -718,7 +785,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
         except Exception as exc:
             return {'ok': False, 'reason': f'eigsh_failed:{exc}'}
         order = np.argsort(vals)
-        vals, vecs = vals[order], vecs[:, order]
+        vals, vecs = vals[order], vecs[:N, order]
         freqs_all = np.sqrt(np.clip(vals,0,None))/(2*math.pi)
         if f_hi is None or freqs_all[-1] >= f_hi or n_request >= k_max:
             break
@@ -766,7 +833,7 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # readback and each mode's bridge participation are both w_node . field.
     w_node = _spread_to_nodes(grid, PX, PY, w_s)
     idxs = np.nonzero(w_node)[0]; w = w_node[idxs]
-    F = np.zeros(N)
+    F = np.zeros(N + n_aux)
     # K is in point-collocation form (D∇⁴w = q, q a pressure in N/m²), same
     # as the brace-mass lumping above -- nodal forces become an equivalent
     # pressure by dividing by the nodal area (dd²).
@@ -776,9 +843,9 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # elastic foundation whose relative stiffness grows with grid size
     # (1e-8 read 14% low at GN 180).
     reg = 1e-12*np.mean(np.abs(diagK))
-    Kreg = (K + sparse.diags(np.full(N, reg))).tocsc()
+    Kreg = (K + sparse.diags(np.full(N + n_aux, reg))).tocsc()
     try:
-        defl = spsolve(Kreg, F)
+        defl = spsolve(Kreg, F)[:N]
     except Exception:
         defl = np.zeros(N)
     defl_at_bridge = float(np.dot(w, defl[idxs]) / max(float(np.sum(w)), 1e-12))
@@ -1022,13 +1089,18 @@ def clamp01(v): return max(0.02, min(0.98, v))
 # Brace material defaults -- overridden per-run from the payload's
 # braceModulus/braceDensity so it's actually settable from the UI, without
 # threading it through every encoder's parameter list.
-BRACE_MATERIAL = {'modulus': 9.79e9, 'density': 350.0}
+BRACE_MATERIAL = {'modulus': 9.79e9, 'density': 350.0, 'shear': 0.65e9}
 # Checked at the top of every search iteration so a run can be stopped
 # mid-way (e.g. the person spots a setup mistake) instead of having to
 # wait out however many iterations are left.
 CANCEL_FLAG = {'stop': False}
 
-def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,curve_cp2=None,height_tip=None,width_tip=None):
+def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,curve_cp2=None,height_tip=None,width_tip=None,shear=None):
+    # The shear modulus goes with the modulus: the default material's when
+    # the modulus is the default, else whatever the caller's material says
+    # (None -> brace_shear_modulus's typical E/G for that kind of material).
+    if modulus is None and shear is None:
+        shear = BRACE_MATERIAL.get('shear')
     modulus = BRACE_MATERIAL['modulus'] if modulus is None else modulus
     density = BRACE_MATERIAL['density'] if density is None else density
     # 'curve3' (cubic, two control points) can represent a true S-curve/
@@ -1043,6 +1115,7 @@ def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,
          'width':max(1.5,width), 'height':max(3.0,height), 'modulus':modulus, 'density':density,
          'widthTip': (max(1.0,width_tip) if width_tip is not None else None),
          'heightTip': (max(2.0,height_tip) if height_tip is not None else None)}
+    if shear: b['shear'] = float(shear)
     if curve_cp: b['cp'] = {'fx':clamp01(curve_cp[0]), 'fy':clamp01(curve_cp[1])}
     if curve_cp2: b['cp2'] = {'fx':clamp01(curve_cp2[0]), 'fy':clamp01(curve_cp2[1])}
     return b
@@ -1472,7 +1545,8 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         h = random.uniform(min_height,max_height); w = random.uniform(min_width,max_width)
         mat = rand_material()
         b = make_brace(x1,y1,x2,y2,h,w, height_tip=h*random.uniform(0.4,1.0), width_tip=w*random.uniform(0.4,1.0),
-                        modulus=(mat['modulus'] if mat else None), density=(mat['density'] if mat else None))
+                        modulus=(mat['modulus'] if mat else None), density=(mat['density'] if mat else None),
+                        shear=(mat.get('shear') if mat else None))
         enforce_length_cap([b])
         p0,p1 = b['pts'][0], b['pts'][1]
         mx,my = (p0['fx']+p1['fx'])/2, (p0['fy']+p1['fy'])/2
@@ -1501,7 +1575,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             # from the CURRENT palette rather than keeping a stale value.
             for b in braces:
                 mat = rand_material()
-                if mat: b['modulus'], b['density'] = mat['modulus'], mat['density']
+                if mat: b['modulus'], b['density'], b['shear'] = mat['modulus'], mat['density'], mat.get('shear')
     else:
         braces = [rand_brace() for _ in range(random.randint(1, max(1,half_cap)))]
     # Whichever path built the starting set (random or warm-started), make
@@ -1562,7 +1636,7 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             # as its own independent variable per brace.
             b = cand[random.randrange(len(cand))]
             mat = rand_material()
-            if mat: b['modulus'], b['density'] = mat['modulus'], mat['density']
+            if mat: b['modulus'], b['density'], b['shear'] = mat['modulus'], mat['density'], mat.get('shear')
         elif move < mat_move_cutoff+0.12 and len(cand) < half_cap:
             cand.append(rand_brace())
         elif move < mat_move_cutoff+0.24 and len(cand) > 1:
@@ -1712,6 +1786,7 @@ async def run_all_patterns(payload_json):
         symmetric = p.get('symmetric', True)
         BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 9.79e9))
         BRACE_MATERIAL['density'] = float(p.get('braceDensity', 350.0))
+        BRACE_MATERIAL['shear'] = float(p.get('braceShear', 0.65e9))
         # Mixed-material search is Experimental only, per an explicit
         # request that plain Novel keep using a single material like every
         # other pattern. Two options for now (spruce, carbon fiber); the
@@ -1721,8 +1796,8 @@ async def run_all_patterns(payload_json):
         # UI calling it "preview only, not implemented," which left no way
         # to actually opt in or out independent of the pattern itself.
         exp_materials = [
-            {'modulus': float(p.get('expMatSpruceE', 9.79e9)), 'density': float(p.get('expMatSpruceRho', 350.0))},
-            {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0))},
+            {'modulus': float(p.get('expMatSpruceE', 9.79e9)), 'density': float(p.get('expMatSpruceRho', 350.0)), 'shear': float(p.get('expMatSpruceG', 0.65e9))},
+            {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0)), 'shear': float(p.get('expMatCarbonG', 5e9))},
         ] if p.get('enableMultiMaterial', False) else None
         # A design uploaded or picked from the current session, used ONLY
         # by the "custom" pattern below -- it does not feed into or alter
@@ -2045,9 +2120,10 @@ async def _solve_pattern_async(key, p, progress_queue=None):
     symmetric = p.get('symmetric', True)
     BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 9.79e9))
     BRACE_MATERIAL['density'] = float(p.get('braceDensity', 350.0))
+    BRACE_MATERIAL['shear'] = float(p.get('braceShear', 0.65e9))
     exp_materials = [
-        {'modulus': float(p.get('expMatSpruceE', 9.79e9)), 'density': float(p.get('expMatSpruceRho', 350.0))},
-        {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0))},
+        {'modulus': float(p.get('expMatSpruceE', 9.79e9)), 'density': float(p.get('expMatSpruceRho', 350.0)), 'shear': float(p.get('expMatSpruceG', 0.65e9))},
+        {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0)), 'shear': float(p.get('expMatCarbonG', 5e9))},
     ] if p.get('enableMultiMaterial', False) else None
     seed_braces = p.get('seedBraces') or None
     custom_symmetric = False

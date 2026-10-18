@@ -439,6 +439,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
             <th style="text-align:left; font-weight:600; padding-bottom:6px">Material</th>
             <th style="text-align:right; font-weight:600; padding-bottom:6px">E (GPa)</th>
             <th style="text-align:right; font-weight:600; padding-bottom:6px">ρ (kg/m³)</th>
+            <th style="text-align:right; font-weight:600; padding-bottom:6px" title="Along-grain shear modulus (G_LR/G_LT for wood, G12 for unidirectional carbon)">G (GPa)</th>
           </tr>
         </thead>
         <tbody>
@@ -446,11 +447,13 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
             <td style="padding:4px 0">Spruce</td>
             <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceE" value="9.79" step="0.01" style="width:58px; text-align:right"></td>
             <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceRho" value="350" step="10" style="width:64px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matSpruceG" value="0.65" step="0.05" min="0.01" style="width:52px; text-align:right"></td>
           </tr>
           <tr>
             <td style="padding:4px 0">Carbon fiber</td>
             <td style="text-align:right; padding:4px 0"><input type="number" id="matCarbonE" value="135" step="5" style="width:58px; text-align:right"></td>
             <td style="text-align:right; padding:4px 0"><input type="number" id="matCarbonRho" value="1600" step="50" style="width:64px; text-align:right"></td>
+            <td style="text-align:right; padding:4px 0"><input type="number" id="matCarbonG" value="5" step="0.5" min="0.01" style="width:52px; text-align:right"></td>
           </tr>
         </tbody>
       </table>
@@ -489,6 +492,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       </select>
       <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="9.79" step="0.01"></div>
       <div class="param-row inline"><label>Density (kg/m³)</label><input type="number" id="braceRho" value="350" step="10"></div>
+      <div class="param-row inline"><label title="Along-grain shear modulus: braces are modelled as Timoshenko beams that also resist twisting, so this softens tall braces">Shear modulus G (GPa)</label><input type="number" id="braceG" value="0.65" step="0.05" min="0.01"></div>
       <div class="sbar-hint">Applies to every brace in every pattern generated below.</div>
     </div>
     <div class="sbar-section" data-open>
@@ -539,6 +543,8 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <input type="range" id="manualBraceE" min="1" max="140" step="0.01" value="9.79"></div>
         <div class="param-row"><label>Density <span id="manualRhoVal">350 kg/m³</span></label>
           <input type="range" id="manualBraceRho" min="100" max="1700" step="10" value="350"></div>
+        <div class="param-row"><label>Shear modulus <span id="manualGVal">0.65 GPa</span></label>
+          <input type="range" id="manualBraceG" min="0.1" max="10" step="0.05" value="0.65"></div>
         <button class="btn danger" id="manualDeleteBraceBtn" style="margin-top:6px; display:none">✕ Delete selected brace</button>
       </div>
       <div class="sbar-section" data-open style="flex:1; display:flex; flex-direction:column; min-height:0;">
@@ -2400,6 +2406,7 @@ function syncManualPropsToUI(){
   document.getElementById('manualWidth').value = b.width;
   document.getElementById('manualBraceRho').value = b.density;
   document.getElementById('manualBraceE').value = (b.modulus/1e9);
+  document.getElementById('manualBraceG').value = braceShearGPa(b);
   refreshManualPropLabels();
 }
 function refreshManualPropLabels(){
@@ -2407,6 +2414,14 @@ function refreshManualPropLabels(){
   document.getElementById('manualWidthVal').textContent = document.getElementById('manualWidth').value+' mm';
   document.getElementById('manualRhoVal').textContent = document.getElementById('manualBraceRho').value+' kg/m³';
   document.getElementById('manualEVal').textContent = (+document.getElementById('manualBraceE').value).toFixed(1)+' GPa';
+  document.getElementById('manualGVal').textContent = (+document.getElementById('manualBraceG').value).toFixed(2)+' GPa';
+}
+// Shear modulus of a brace in GPa; braces from older projects carry none and
+// get the same typical E/G as engine.brace_shear_modulus.
+function braceShearGPa(b){
+  if(b.shear) return b.shear/1e9;
+  const E = b.modulus || 9.79e9;
+  return +(E/(E > 60e9 ? 27 : 15)/1e9).toFixed(2);
 }
 function onManualPropChange(){
   refreshManualPropLabels();
@@ -2418,20 +2433,22 @@ function onManualPropChange(){
       b.heightTip = b.height; b.widthTip = b.width;
       b.density = +document.getElementById('manualBraceRho').value;
       b.modulus = +document.getElementById('manualBraceE').value*1e9;
+      b.shear = +document.getElementById('manualBraceG').value*1e9;
       drawBraceCanvas();
       updateManualBraceList();
     }
   }
 }
-['manualHeight','manualWidth','manualBraceRho','manualBraceE'].forEach(id=>{
+['manualHeight','manualWidth','manualBraceRho','manualBraceE','manualBraceG'].forEach(id=>{
   document.getElementById(id).addEventListener('input', onManualPropChange);
 });
 (function(){
-  const presets = { spruce:{E:9.79,rho:350}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
+  const presets = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5} };
   document.getElementById('manualMatPreset').onchange = function(){
     const p = presets[this.value]; if(!p) return;
     document.getElementById('manualBraceE').value = p.E;
     document.getElementById('manualBraceRho').value = p.rho;
+    document.getElementById('manualBraceG').value = p.G;
     onManualPropChange();
   };
 })();
@@ -2732,6 +2749,7 @@ function newManualBraceDefaults(){
     width: +document.getElementById('manualWidth').value,
     density: +document.getElementById('manualBraceRho').value,
     modulus: +document.getElementById('manualBraceE').value*1e9,
+    shear: +document.getElementById('manualBraceG').value*1e9,
     color: MANUAL_COLORS[MANUAL.colorIdx%MANUAL_COLORS.length],
   };
 }
@@ -2834,10 +2852,12 @@ document.getElementById('genNovelExperimental').onchange = e=>{
 document.getElementById('genCustom').onchange = e=>{
   document.getElementById('customPatternSettings').style.display = e.target.checked ? 'block' : 'none';
 };
-const BRACE_MAT_PRESETS = { spruce:{E:9.79,rho:350}, maple:{E:12.6,rho:630}, mahogany:{E:8.7,rho:550}, carbon:{E:60,rho:700} };
+// G: along-grain shear modulus, GPa (wood cut with its grain along the brace).
+const BRACE_MAT_PRESETS = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5} };
 document.getElementById('braceMatPreset').onchange = e=>{
   const p = BRACE_MAT_PRESETS[e.target.value]; if(!p) return;
   document.getElementById('braceE').value = p.E; document.getElementById('braceRho').value = p.rho;
+  document.getElementById('braceG').value = p.G;
 };
 
 document.getElementById('runOptimizeBtn').onclick = async ()=>{
@@ -2893,11 +2913,14 @@ document.getElementById('runOptimizeBtn').onclick = async ()=>{
     displayGN: +document.getElementById('finalDisplayGN').value,
     braceModulus: +document.getElementById('braceE').value*1e9,
     braceDensity: +document.getElementById('braceRho').value,
+    braceShear: (+document.getElementById('braceG').value || 0.65)*1e9,
     enableMultiMaterial: document.getElementById('enableMultiMaterial').checked,
     expMatSpruceE: +document.getElementById('matSpruceE').value*1e9,
     expMatSpruceRho: +document.getElementById('matSpruceRho').value,
     expMatCarbonE: +document.getElementById('matCarbonE').value*1e9,
     expMatCarbonRho: +document.getElementById('matCarbonRho').value,
+    expMatSpruceG: (+document.getElementById('matSpruceG').value || 0.65)*1e9,
+    expMatCarbonG: (+document.getElementById('matCarbonG').value || 5)*1e9,
     seedBraces: customSeedBraces,
     customLockPositions: document.getElementById('customLockPositions').checked,
     polishEnabled: document.getElementById('optPolishEnabled').checked,
@@ -3033,7 +3056,10 @@ function renderResults(){
           </div>
           <div class="btn-row" style="margin-top:6px">
             <button class="btn" data-exportstl="${key}" ${res.ok ? '' : 'disabled'} title="Triangle mesh of the plate and braces, in mm">⬇ STL</button>
-            ${isDesktopBuild() ? `<button class="btn" data-exportstep="${key}" ${res.ok ? '' : 'disabled'} title="Solid bodies for simulation; also saves the simulation info alongside">⬇ STEP</button>` : ''}
+            ${isDesktopBuild() ? `<button class="btn" data-exportstep="${key}" ${res.ok ? '' : 'disabled'} title="Solid bodies for simulation; also saves the simulation info alongside">⬇ STEP</button>
+            <select data-stepbodies="${key}" title="How the STEP file splits the braces into bodies" style="font-size:11.5px">
+              ${STEP_BODY_MODES.map(m=>`<option value="${m.value}" title="${m.hint}" ${m.value===STEP_BODY_MODE?'selected':''}>${m.label}</option>`).join('')}
+            </select>` : ''}
             <button class="btn" data-exportsim="${key}" ${res.ok ? '' : 'disabled'} title="Materials, edge condition, load and predicted frequencies, for setting up a simulation">⬇ Simulation info</button>
           </div>
           <div class="status" id="cadstatus_${key}" style="display:none; margin-top:6px"></div>
@@ -3067,6 +3093,10 @@ function renderResults(){
   });
   grid.querySelectorAll('[data-exportstl]').forEach(btn=>{ btn.onclick = ()=> exportPatternSTL(btn.dataset.exportstl); });
   grid.querySelectorAll('[data-exportstep]').forEach(btn=>{ btn.onclick = ()=> exportPatternSTEP(btn.dataset.exportstep); });
+  grid.querySelectorAll('[data-stepbodies]').forEach(sel=>{ sel.onchange = ()=>{
+    STEP_BODY_MODE = sel.value;
+    grid.querySelectorAll('[data-stepbodies]').forEach(other=>{ other.value = sel.value; });
+  }; });
   grid.querySelectorAll('[data-exportsim]').forEach(btn=>{ btn.onclick = ()=> exportPatternSimInfo(btn.dataset.exportsim); });
   grid.querySelectorAll('[data-editbyhand]').forEach(btn=>{
     btn.onclick = ()=> sendResultToHandEditor(btn.dataset.editbyhand);
@@ -3811,22 +3841,33 @@ function cadBridgeMm(){
 }
 function cadBraces(res){
   const E = +document.getElementById('braceE').value*1e9 || 9.79e9, rho = +document.getElementById('braceRho').value || 350;
-  return (res.braces||[]).map(b=> ({ ...b, modulus: b.modulus || E, density: b.density || rho }));
+  return (res.braces||[]).map(b=> { const m = { ...b, modulus: b.modulus || E, density: b.density || rho }; m.shear = braceShearGPa(m)*1e9; return m; });
 }
-// Mirrors cad_export.py's per-material body naming.
-function cadBodyNames(braces){
+// How the STEP export splits braces into bodies (cad_export.BRACE_BODY_MODES).
+// Shared by every result card so two exports of one design are easy to compare.
+const STEP_BODY_MODES = [
+  { value:'material', label:'Bodies: one per material', hint:'Braces of one material fused into one body; each needs a bonded contact to the plate' },
+  { value:'separate', label:'Bodies: one per brace',    hint:'Each brace its own body, numbered as in the dimensions table, so every contact is a simple strip' },
+  { value:'shared',   label:'Bodies: shared faces',     hint:'Glue faces imprinted and written as one part; set Share Topology in SpaceClaim and no contacts are needed' },
+];
+let STEP_BODY_MODE = 'material';
+
+// Mirrors cad_export.py's body naming for each mode.
+function cadBodyNames(braces, mode){
   const keyOf = b=> `${+(b.modulus/1e9).toFixed(2)}|${Math.round(b.density)}`;
   const keys = [...new Set(braces.map(keyOf))];
-  return braces.map(b=>{
+  return braces.map((b,i)=>{
+    if(mode === 'separate') return `brace_${String(i+1).padStart(2,'0')}` + (keys.length < 2 ? '' : `_E${keyOf(b).split('|')[0]}GPa`);
     if(keys.length < 2) return 'braces';
     const [E, rho] = keyOf(b).split('|');
     return `braces_E${E}GPa_rho${rho}`;
   });
 }
 
-function designSimulationInfo(key, res){
+function designSimulationInfo(key, res, stepBodies){
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000;
-  const braces = cadBraces(res), bodies = cadBodyNames(braces);
+  const mode = stepBodies || STEP_BODY_MODE;
+  const braces = cadBraces(res), bodies = cadBodyNames(braces, mode);
   const bridge = GEO.bridgePts.length >= 2 ? GEO.bridgePts.map(p=>[p.fx*LxMm, p.fy*LyMm])
                                            : [[GEO.bridge.fx*LxMm, GEO.bridge.fy*LyMm]];
   return {
@@ -3868,7 +3909,8 @@ function designSimulationInfo(key, res){
       width_mm: { center: b.width, tips: b.widthTip==null ? b.width : b.widthTip },
       height_mm: { center: b.height, tips: b.heightTip==null ? b.height : b.heightTip },
       taper: 'parabolic: tip value at both ends, center value at the midpoint',
-      material: { E: b.modulus, density: b.density },
+      material: { E_along_brace: b.modulus, G_along_brace: b.shear, density: b.density,
+                  grain: 'along the brace centreline (shear/twist use G_along_brace)' },
     })),
     predicted_by_this_tool: {
       matched_to_targets_Hz: (buildTargetsPayload()).map((t,i)=> ({ target_Hz: t.freq, mode_Hz: res.freqs[i] ?? null })),
@@ -3882,9 +3924,13 @@ function designSimulationInfo(key, res){
     },
     notes: [
       'Braces are modelled as rectangular sections (with taper) bonded to the plate; real profiles (peaked, scalloped) will differ.',
+      'The tool treats each brace as a Timoshenko beam with its grain along its own length: E_along_brace in bending, G_along_brace in shear and twist. To match in ANSYS, give braces an orthotropic material whose first axis follows each brace (Element Orientation guided by the brace edges), e.g. for spruce E_L 9.79, E_R 0.8, E_T 0.5 GPa, G_LR = G_LT = G_along_brace, G_RT 0.04 GPa. An isotropic brace material (G = E/2(1+nu), about 3.8 GPa for spruce) is stiffer in shear and twist, and reads a few percent high.',
       'The top plate is flat; any doming is not represented.',
       'The bridge is a separate body on the -z face (outside of the top), bonded over its footprint.',
-      'In the STEP file, braces of one material are fused into a single body and trimmed to the plate outline and sound hole; the STL contains each brace as its own (possibly overlapping) shell.',
+      ({ material: 'In the STEP file, braces of one material are fused into a single body (it may import as several disjoint solids) and trimmed to the plate outline and sound hole; bond each to the plate (bonded contact, MPC formulation recommended).',
+         separate: 'In the STEP file, each brace is its own body named brace_NN after its index here, trimmed to the plate outline and sound hole; where braces cross, the crossing belongs to the lower-numbered brace, so a later brace may import as two pieces. Bond each to the plate and to any brace it abuts (bonded contact, MPC formulation recommended).',
+         shared: 'In the STEP file, all bodies are one part (top_assembly) with the glue faces imprinted, so plate, braces and bridge have matching faces where they meet. In SpaceClaim set the part\'s Share Topology to Share (or Form New Part in DesignModeler) before meshing: the bodies then mesh with common nodes and need no contacts. A body made of disjoint solids imports as name_1, name_2, ...' })[mode],
+      'The STL contains each brace as its own (possibly overlapping) shell.',
     ],
   };
 }
@@ -3997,8 +4043,9 @@ async function exportPatternSTEP(key){
   if(btn) btn.disabled = true;
   cadStatus(key, 'Building STEP solids… (choose where to save first)', 'warn');
   try{
+    const sel = document.querySelector(`[data-stepbodies="${key}"]`), braceBodies = (sel && sel.value) || STEP_BODY_MODE;
     const payload = { LxMm: GEO.Lx*1000, LyMm: GEO.Ly*1000, hMm: GEO.h*1000, outline: cadOutlineMm(), hole: cadHoleMm(),
-                      braces: cadBraces(res), bridge: cadBridgeMm(), simulationInfo: designSimulationInfo(key, res) };
+                      braces: cadBraces(res), bridge: cadBridgeMm(), braceBodies, simulationInfo: designSimulationInfo(key, res, braceBodies) };
     const r = await window.pywebview.api.export_step(JSON.stringify(payload), cadFileBase(key)+'.step');
     if(r && r.ok) cadStatus(key, `STEP saved with ${r.bodies.map(b=>b.name).join(', ')}, plus simulation info next to it.`, 'ok');
     else if(r && r.cancelled) cadStatus(key, 'Save cancelled.', 'warn');
