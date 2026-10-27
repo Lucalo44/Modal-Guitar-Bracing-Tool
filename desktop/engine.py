@@ -303,6 +303,13 @@ def brace_shear_modulus(b):
     E = float(b.get('modulus', 9.79e9))
     return E / (27.0 if E > 60e9 else 15.0)
 
+def isotropic_shear_modulus(E):
+    """G = E/(2(1+nu)) -- what a CAD/FEA package gives a brace that is
+    defined as an ordinary isotropic material (nu 0.4 for wood-like, 0.3 for
+    carbon-like): about 3.5 GPa for spruce, several times the along-grain
+    G_LR of real wood."""
+    return float(E) / (2.0 * (1.0 + (0.3 if E > 60e9 else 0.4)))
+
 def _rect_torsion_constant(w, h):
     """Saint-Venant torsion constant of a w x h rectangle (Roark)."""
     a = np.maximum(w, h); c = np.minimum(w, h); r = c / np.maximum(a, 1e-12)
@@ -318,7 +325,7 @@ def _assemble_rows(ids, g, coef):
     keep = (rows >= 0) & (cols >= 0) & (vals != 0)
     return rows[keep], cols[keep], vals[keep]
 
-def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None):
+def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, iso_shear=False):
     """Each brace as a Timoshenko beam embedded in the plate, plus its
     resistance to twisting. Returns (K, n_aux): K is (N+n_aux) square, where
     the n_aux extra unknowns are the braces' shear strains (no mass).
@@ -364,7 +371,7 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None):
         wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
         modulus = b.get('modulus', 9.79e9)
-        G = brace_shear_modulus(b)
+        G = isotropic_shear_modulus(modulus) if iso_shear else brace_shear_modulus(b)
         xy, t, hs = _brace_stations(b, Lx, Ly, dd)
         if xy is None:
             continue
@@ -745,7 +752,8 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
     braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
-    K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy))
+    K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy),
+                                            iso_shear=(geo.get('braceShearModel', 'iso') == 'iso'))
     # Three separate directional terms, each squared for guaranteed
     # positive-semi-definiteness (same principle the old single-operator
     # isotropic solver relied on, just applied to three simpler
@@ -1873,6 +1881,9 @@ async def run_all_patterns(payload_json):
         final = {}
         hifi_geo = dict(geo); hifi_geo['GN'] = p.get('hifiGN', 55)
         display_geo = dict(geo); display_geo['GN'] = p.get('displayGN', 150)
+        # The card reports the polish solve's own modes (what the log prints); the
+        # finer display re-solve is opt-in since it shifts modes the search tuned.
+        use_display_solve = bool(p.get('displayResolve', False)) and display_geo['GN'] > hifi_geo['GN']
         n_modes = len(targets)
         polish_iters = max(40, min(200, iters//4))
         polish_enabled = p.get('polishEnabled', True)
@@ -1937,7 +1948,7 @@ async def run_all_patterns(payload_json):
             # search or polish, where it would run hundreds of times --
             # means better accuracy costs one extra solve, not a slower
             # search.
-            if not CANCEL_FLAG['stop'] and display_geo['GN'] > hifi_geo['GN']:
+            if not CANCEL_FLAG['stop'] and use_display_solve:
                 r_display = evaluate_design(display_geo, polished_braces, n_modes, meas_xy, want_field=True)
                 if r_display.get('ok'):
                     r = r_display
@@ -1951,7 +1962,7 @@ async def run_all_patterns(payload_json):
             # class as the display-resolution recompute above, not
             # per-iteration.
             if not CANCEL_FLAG['stop'] and r.get('ok') and not r.get('fieldShapes'):
-                field_geo = display_geo if display_geo['GN'] > hifi_geo['GN'] else hifi_geo
+                field_geo = display_geo if use_display_solve else hifi_geo
                 r_field = evaluate_design(field_geo, polished_braces, n_modes, meas_xy, want_field=True)
                 if r_field.get('ok'):
                     r['fieldShapes'] = r_field.get('fieldShapes')
@@ -2184,6 +2195,9 @@ async def _solve_pattern_async(key, p, progress_queue=None):
 
     hifi_geo = dict(geo); hifi_geo['GN'] = p.get('hifiGN', 55)
     display_geo = dict(geo); display_geo['GN'] = p.get('displayGN', 150)
+    # The card reports the polish solve's own modes (what the log prints); the
+    # finer display re-solve is opt-in since it shifts modes the search tuned.
+    use_display_solve = bool(p.get('displayResolve', False)) and display_geo['GN'] > hifi_geo['GN']
     n_modes = len(targets)
     polish_iters = max(40, min(200, iters//4))
     polish_enabled = p.get('polishEnabled', True)
@@ -2222,12 +2236,12 @@ async def _solve_pattern_async(key, p, progress_queue=None):
             enc, bounds, hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight,
             polish_iters, _report_progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
 
-    if not CANCEL_FLAG['stop'] and display_geo['GN'] > hifi_geo['GN']:
+    if not CANCEL_FLAG['stop'] and use_display_solve:
         r_display = evaluate_design(display_geo, polished_braces, n_modes, meas_xy, want_field=True)
         if r_display.get('ok'):
             r = r_display
     if not CANCEL_FLAG['stop'] and r.get('ok') and not r.get('fieldShapes'):
-        field_geo = display_geo if display_geo['GN'] > hifi_geo['GN'] else hifi_geo
+        field_geo = display_geo if use_display_solve else hifi_geo
         r_field = evaluate_design(field_geo, polished_braces, n_modes, meas_xy, want_field=True)
         if r_field.get('ok'):
             r['fieldShapes'] = r_field.get('fieldShapes')
