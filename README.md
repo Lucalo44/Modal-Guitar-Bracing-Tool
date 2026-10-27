@@ -25,7 +25,7 @@ Open the [live site](https://lucalo44.github.io/Modal-Guitar-Bracing-Tool/) in a
 
 The app walks you through four tabs, from left to right:
 
-1. **Setup.** Pick a preset outline (Dreadnought, OM/000, or a 4/4 violin) or choose Custom and trace your own. In order to trace, upload a photo or scan of a top, scale it with the slider, and click around the edge with the ● Outline tool; ○ Sound hole and ▱ Bridge work the same way. Then set:
+1. **Setup.** Pick a preset outline (Dreadnought or OM/000) or choose Custom and trace your own. In order to trace, upload a photo or scan of a top, scale it with the slider, and click around the edge with the ● Outline tool; ○ Sound hole and ▱ Bridge work the same way. Then set:
    1. The body length, width, and thickness (the Dreadnought default is 508 × 394 mm at 2.8 mm thick).
    2. The top material. Sitka spruce and western red cedar are built in, or you can enter your own along-grain, across-grain, and shear moduli.
    3. The edge boundary condition (clamped by default, which matches a CAD "fixed support").

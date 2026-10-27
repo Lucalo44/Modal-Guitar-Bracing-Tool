@@ -302,7 +302,6 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <option value="custom">Custom (trace at right)</option>
         <option value="dreadnought">Guitar — Dreadnought</option>
         <option value="om">Guitar — OM / 000</option>
-        <option value="violin4-4">Violin — 4/4 (generic)</option>
       </select>
       <div class="param-row inline"><label>Body length Lx (mm)</label><input type="number" id="geoLx" value="508"></div>
       <div class="param-row inline"><label>Body width Ly (mm)</label><input type="number" id="geoLy" value="394"></div>
@@ -620,7 +619,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
 </div>
 
 <input type="file" id="loadProjectInput" accept="application/json" style="display:none">
-<div id="helpOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center;">
+<div id="helpOverlay" onclick="if(event.target===this) this.style.display='none'" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center;">
   <div style="max-width:760px; max-height:85vh; overflow:auto; background:var(--bg3); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--border); border-radius:20px; padding:24px; box-shadow:0 1px 0 rgba(255,255,255,.7) inset, 0 8px 30px rgba(20,50,45,.35);">
     <h2 style="font-size:15px; margin-bottom:10px; color:var(--accent);">Documentation</h2>
     <div id="helpBody" style="font-size:12px; line-height:1.7; color:var(--text);"></div>
@@ -751,7 +750,7 @@ document.getElementById('helpBtn').onclick = ()=>{
   button at the bottom that marks the step done and moves on to the next one.</p>
 
   <h4 style="margin-top:16px;color:var(--accent);font-size:12.5px">Step 1 — Setup</h4>
-  <p><b>Outline:</b> pick a preset (Dreadnought, OM/000, or a generic 4/4 violin) or choose Custom and trace your own. To
+  <p><b>Outline:</b> pick a preset (Dreadnought or OM/000) or choose Custom and trace your own. To
   trace, upload a photo or scan of a top, adjust it with "Image scale" and "✥ Move image," select ● Outline, and click
   around the edge. Left-click adds or drags a point on the selected shape, right-click removes the nearest point, and
   "Close shape" finishes it. The ○ Sound hole and ▱ Bridge tools work the same way. An outline needs at least 6 points.
@@ -966,6 +965,11 @@ document.getElementById('helpBtn').onclick = ()=>{
 `;
   document.getElementById('helpOverlay').style.display='flex';
 };
+// Esc closes the documentation too, like clicking the dimmed area around it.
+document.addEventListener('keydown', e=>{
+  const overlay = document.getElementById('helpOverlay');
+  if(e.key==='Escape' && overlay.style.display!=='none') overlay.style.display='none';
+});
 
 /* ============================================================
    SMALL UTILITIES
@@ -1670,44 +1674,18 @@ const DXF_OUTLINES = {
   om: [{fx:0.03,fy:0.46868},{fx:0.03003,fy:0.45785},{fx:0.03011,fy:0.44685},{fx:0.03023,fy:0.43578},{fx:0.03042,fy:0.42471},{fx:0.03067,fy:0.41373},{fx:0.03099,fy:0.40294},{fx:0.03139,fy:0.39242},{fx:0.03188,fy:0.38225},{fx:0.03246,fy:0.37242},{fx:0.03313,fy:0.3629},{fx:0.03388,fy:0.35364},{fx:0.03473,fy:0.34459},{fx:0.03566,fy:0.33573},{fx:0.03669,fy:0.327},{fx:0.0378,fy:0.31836},{fx:0.039,fy:0.30978},{fx:0.0403,fy:0.3012},{fx:0.04175,fy:0.29263},{fx:0.04343,fy:0.28405},{fx:0.04541,fy:0.27545},{fx:0.04774,fy:0.26682},{fx:0.05051,fy:0.25815},{fx:0.05377,fy:0.24943},{fx:0.0576,fy:0.24064},{fx:0.06206,fy:0.23179},{fx:0.06718,fy:0.22289},{fx:0.07287,fy:0.21404},{fx:0.07905,fy:0.20534},{fx:0.0856,fy:0.19689},{fx:0.09244,fy:0.18881},{fx:0.09948,fy:0.18119},{fx:0.10661,fy:0.17414},{fx:0.11375,fy:0.16776},{fx:0.12079,fy:0.16217},{fx:0.12764,fy:0.15745},{fx:0.13422,fy:0.15371},{fx:0.14052,fy:0.1509},{fx:0.14661,fy:0.14887},{fx:0.15256,fy:0.14748},{fx:0.16428,fy:0.14606},{fx:0.17621,fy:0.14547},{fx:0.18239,fy:0.1452},{fx:0.18874,fy:0.14499},{fx:0.19523,fy:0.14494},{fx:0.20187,fy:0.14516},{fx:0.20865,fy:0.14573},{fx:0.21555,fy:0.14676},{fx:0.22257,fy:0.14834},{fx:0.22971,fy:0.15057},{fx:0.23693,fy:0.1535},{fx:0.24419,fy:0.15702},{fx:0.25143,fy:0.16101},{fx:0.25858,fy:0.16535},{fx:0.26559,fy:0.16991},{fx:0.2724,fy:0.17456},{fx:0.27893,fy:0.17918},{fx:0.28514,fy:0.18364},{fx:0.29097,fy:0.18781},{fx:0.29636,fy:0.1916},{fx:0.30138,fy:0.19499},{fx:0.31057,fy:0.20067},{fx:0.31913,fy:0.20501},{fx:0.32758,fy:0.20813},{fx:0.33629,fy:0.21006},{fx:0.34548,fy:0.21079},{fx:0.35536,fy:0.21026},{fx:0.36593,fy:0.20838},{fx:0.37719,fy:0.20505},{fx:0.38307,fy:0.20281},{fx:0.38909,fy:0.20018},{fx:0.39524,fy:0.19718},{fx:0.40148,fy:0.19383},{fx:0.4078,fy:0.19013},{fx:0.41416,fy:0.1861},{fx:0.42054,fy:0.18174},{fx:0.42691,fy:0.17707},{fx:0.43326,fy:0.17211},{fx:0.43958,fy:0.16687},{fx:0.4459,fy:0.1614},{fx:0.45225,fy:0.15571},{fx:0.45866,fy:0.14986},{fx:0.46514,fy:0.14386},{fx:0.47172,fy:0.13776},{fx:0.47844,fy:0.13158},{fx:0.4853,fy:0.12536},{fx:0.49235,fy:0.11914},{fx:0.4996,fy:0.11294},{fx:0.50705,fy:0.1068},{fx:0.51467,fy:0.10074},{fx:0.52246,fy:0.0948},{fx:0.5304,fy:0.089},{fx:0.53847,fy:0.08338},{fx:0.54667,fy:0.07796},{fx:0.55498,fy:0.07277},{fx:0.56338,fy:0.06785},{fx:0.57185,fy:0.06322},{fx:0.5804,fy:0.05891},{fx:0.58899,fy:0.05495},{fx:0.59761,fy:0.05133},{fx:0.60624,fy:0.04804},{fx:0.61487,fy:0.04507},{fx:0.62346,fy:0.04241},{fx:0.632,fy:0.04004},{fx:0.64048,fy:0.03794},{fx:0.64886,fy:0.03612},{fx:0.65713,fy:0.03455},{fx:0.66527,fy:0.03322},{fx:0.67327,fy:0.03212},{fx:0.68111,fy:0.03125},{fx:0.68883,fy:0.0306},{fx:0.69644,fy:0.03018},{fx:0.70398,fy:0.03},{fx:0.71148,fy:0.03006},{fx:0.71895,fy:0.03036},{fx:0.72643,fy:0.03091},{fx:0.73394,fy:0.03171},{fx:0.7415,fy:0.03276},{fx:0.74913,fy:0.03407},{fx:0.75682,fy:0.03566},{fx:0.76454,fy:0.03752},{fx:0.77228,fy:0.03968},{fx:0.78002,fy:0.04214},{fx:0.78773,fy:0.04491},{fx:0.7954,fy:0.048},{fx:0.80301,fy:0.05143},{fx:0.81053,fy:0.0552},{fx:0.81796,fy:0.05932},{fx:0.82528,fy:0.06379},{fx:0.83248,fy:0.06858},{fx:0.83955,fy:0.07368},{fx:0.84648,fy:0.07907},{fx:0.85328,fy:0.08472},{fx:0.85992,fy:0.09062},{fx:0.8664,fy:0.09674},{fx:0.87272,fy:0.10307},{fx:0.87887,fy:0.10958},{fx:0.88484,fy:0.11627},{fx:0.89062,fy:0.12315},{fx:0.89621,fy:0.13025},{fx:0.90161,fy:0.13763},{fx:0.9068,fy:0.1453},{fx:0.91178,fy:0.1533},{fx:0.91655,fy:0.16168},{fx:0.9211,fy:0.17047},{fx:0.92543,fy:0.1797},{fx:0.92953,fy:0.18941},{fx:0.93339,fy:0.1996},{fx:0.93702,fy:0.21021},{fx:0.94041,fy:0.22114},{fx:0.94357,fy:0.23229},{fx:0.94649,fy:0.24359},{fx:0.94919,fy:0.25492},{fx:0.95165,fy:0.26621},{fx:0.95387,fy:0.27736},{fx:0.95587,fy:0.28827},{fx:0.95763,fy:0.29886},{fx:0.95916,fy:0.30902},{fx:0.96047,fy:0.31874},{fx:0.96158,fy:0.32811},{fx:0.96252,fy:0.33724},{fx:0.96332,fy:0.34625},{fx:0.964,fy:0.35526},{fx:0.96459,fy:0.3644},{fx:0.96513,fy:0.37377},{fx:0.96564,fy:0.3835},{fx:0.96614,fy:0.3937},{fx:0.96666,fy:0.40442},{fx:0.96719,fy:0.41553},{fx:0.9677,fy:0.42686},{fx:0.9682,fy:0.43826},{fx:0.96866,fy:0.44958},{fx:0.96907,fy:0.46066},{fx:0.96943,fy:0.47133},{fx:0.96971,fy:0.48145},{fx:0.9699,fy:0.49085},{fx:0.97,fy:0.49938},{fx:0.96999,fy:0.50697},{fx:0.96989,fy:0.51386},{fx:0.96972,fy:0.52032},{fx:0.9695,fy:0.52666},{fx:0.96924,fy:0.53316},{fx:0.96897,fy:0.5401},{fx:0.96871,fy:0.54776},{fx:0.96845,fy:0.5562},{fx:0.96818,fy:0.56531},{fx:0.9679,fy:0.57494},{fx:0.96759,fy:0.58498},{fx:0.96723,fy:0.59528},{fx:0.96682,fy:0.60572},{fx:0.96634,fy:0.61616},{fx:0.96578,fy:0.62648},{fx:0.96512,fy:0.63655},{fx:0.96436,fy:0.6463},{fx:0.96349,fy:0.65576},{fx:0.96251,fy:0.66501},{fx:0.96141,fy:0.6741},{fx:0.96019,fy:0.68308},{fx:0.95885,fy:0.69203},{fx:0.95737,fy:0.70099},{fx:0.95577,fy:0.71002},{fx:0.95402,fy:0.71919},{fx:0.95213,fy:0.72849},{fx:0.95011,fy:0.73789},{fx:0.94793,fy:0.74731},{fx:0.94562,fy:0.75669},{fx:0.94315,fy:0.76597},{fx:0.94054,fy:0.77509},{fx:0.93778,fy:0.78399},{fx:0.93487,fy:0.7926},{fx:0.93181,fy:0.80086},{fx:0.9286,fy:0.80875},{fx:0.92523,fy:0.81629},{fx:0.9217,fy:0.82356},{fx:0.918,fy:0.83059},{fx:0.91414,fy:0.83743},{fx:0.91012,fy:0.84414},{fx:0.90591,fy:0.85077},{fx:0.90153,fy:0.85736},{fx:0.89697,fy:0.86395},{fx:0.89224,fy:0.87051},{fx:0.88734,fy:0.87701},{fx:0.88227,fy:0.88341},{fx:0.87704,fy:0.88967},{fx:0.87166,fy:0.89574},{fx:0.86613,fy:0.9016},{fx:0.86046,fy:0.9072},{fx:0.85466,fy:0.91251},{fx:0.84872,fy:0.91751},{fx:0.84265,fy:0.92223},{fx:0.83647,fy:0.92669},{fx:0.83017,fy:0.93091},{fx:0.82378,fy:0.93491},{fx:0.81728,fy:0.93872},{fx:0.81069,fy:0.94235},{fx:0.80402,fy:0.94583},{fx:0.79727,fy:0.94917},{fx:0.79045,fy:0.95235},{fx:0.78357,fy:0.95536},{fx:0.77665,fy:0.95817},{fx:0.76969,fy:0.96073},{fx:0.76271,fy:0.96303},{fx:0.75572,fy:0.96504},{fx:0.74872,fy:0.96673},{fx:0.74173,fy:0.96806},{fx:0.73476,fy:0.96903},{fx:0.72777,fy:0.96966},{fx:0.72075,fy:0.96997},{fx:0.71368,fy:0.97},{fx:0.70652,fy:0.96977},{fx:0.69926,fy:0.96931},{fx:0.69187,fy:0.96866},{fx:0.68433,fy:0.96783},{fx:0.67661,fy:0.96686},{fx:0.66872,fy:0.96576},{fx:0.6607,fy:0.96453},{fx:0.65262,fy:0.96317},{fx:0.6445,fy:0.96166},{fx:0.63641,fy:0.96001},{fx:0.62839,fy:0.95821},{fx:0.62049,fy:0.95626},{fx:0.61276,fy:0.95415},{fx:0.60524,fy:0.95187},{fx:0.59799,fy:0.94942},{fx:0.59099,fy:0.94679},{fx:0.58418,fy:0.94395},{fx:0.57753,fy:0.94088},{fx:0.57097,fy:0.93755},{fx:0.56446,fy:0.93395},{fx:0.55795,fy:0.93004},{fx:0.55138,fy:0.92581},{fx:0.54472,fy:0.92123},{fx:0.53791,fy:0.91629},{fx:0.53097,fy:0.91102},{fx:0.52393,fy:0.90546},{fx:0.5168,fy:0.89967},{fx:0.50961,fy:0.89369},{fx:0.50239,fy:0.88756},{fx:0.49516,fy:0.88133},{fx:0.48795,fy:0.87505},{fx:0.48078,fy:0.86877},{fx:0.47368,fy:0.86253},{fx:0.46666,fy:0.85637},{fx:0.45975,fy:0.85033},{fx:0.45294,fy:0.84443},{fx:0.44623,fy:0.8387},{fx:0.43961,fy:0.83316},{fx:0.4331,fy:0.82782},{fx:0.42668,fy:0.82272},{fx:0.42036,fy:0.81788},{fx:0.41414,fy:0.81331},{fx:0.40802,fy:0.80905},{fx:0.402,fy:0.80512},{fx:0.39611,fy:0.80153},{fx:0.39038,fy:0.79832},{fx:0.38484,fy:0.79552},{fx:0.37439,fy:0.7912},{fx:0.36498,fy:0.78876},{fx:0.35623,fy:0.78798},{fx:0.34727,fy:0.78828},{fx:0.33731,fy:0.78914},{fx:0.3265,fy:0.79086},{fx:0.31542,fy:0.79407},{fx:0.30463,fy:0.79939},{fx:0.29943,fy:0.80282},{fx:0.29434,fy:0.8066},{fx:0.28934,fy:0.81059},{fx:0.28442,fy:0.81466},{fx:0.27956,fy:0.81866},{fx:0.27473,fy:0.82247},{fx:0.26511,fy:0.82916},{fx:0.25534,fy:0.83484},{fx:0.24518,fy:0.83987},{fx:0.23441,fy:0.84457},{fx:0.22878,fy:0.84678},{fx:0.22301,fy:0.84884},{fx:0.21709,fy:0.85069},{fx:0.21106,fy:0.85229},{fx:0.2049,fy:0.85359},{fx:0.19864,fy:0.85454},{fx:0.19229,fy:0.8551},{fx:0.18588,fy:0.85529},{fx:0.17945,fy:0.85512},{fx:0.17303,fy:0.85461},{fx:0.16665,fy:0.85379},{fx:0.16035,fy:0.85267},{fx:0.15417,fy:0.85127},{fx:0.14813,fy:0.84961},{fx:0.14227,fy:0.84771},{fx:0.1366,fy:0.84558},{fx:0.12584,fy:0.84067},{fx:0.11596,fy:0.83497},{fx:0.10701,fy:0.82854},{fx:0.0987,fy:0.82108},{fx:0.09056,fy:0.81212},{fx:0.08641,fy:0.80692},{fx:0.08215,fy:0.80119},{fx:0.07784,fy:0.79498},{fx:0.07353,fy:0.78832},{fx:0.06928,fy:0.78129},{fx:0.06516,fy:0.77392},{fx:0.06122,fy:0.76629},{fx:0.05753,fy:0.75843},{fx:0.05415,fy:0.7504},{fx:0.05112,fy:0.74225},{fx:0.04845,fy:0.73399},{fx:0.04611,fy:0.72558},{fx:0.04406,fy:0.717},{fx:0.04227,fy:0.70823},{fx:0.04071,fy:0.69925},{fx:0.03935,fy:0.69003},{fx:0.03816,fy:0.68054},{fx:0.03711,fy:0.67077},{fx:0.03617,fy:0.66071},{fx:0.03533,fy:0.65042},{fx:0.03458,fy:0.63997},{fx:0.03391,fy:0.62946},{fx:0.03333,fy:0.61895},{fx:0.03282,fy:0.60852},{fx:0.03237,fy:0.59824},{fx:0.03198,fy:0.5882},{fx:0.03164,fy:0.57847},{fx:0.03134,fy:0.56913},{fx:0.03108,fy:0.56018},{fx:0.03086,fy:0.55153},{fx:0.03067,fy:0.54305},{fx:0.03051,fy:0.53463},{fx:0.03037,fy:0.52617},{fx:0.03026,fy:0.51753},{fx:0.03017,fy:0.50861},{fx:0.0301,fy:0.49929},{fx:0.03004,fy:0.48949},{fx:0.03001,fy:0.47926}],
 };
 const OUTLINE_PRESETS = {
-  dreadnought: { bodyLen:508, upperBout:292, waist:279, lowerBout:394, waistPos:0.62,
-                 holeCx:0.382, holeCy:0.5, holeR:0.1332 },
-  om:          { bodyLen:487, upperBout:270, waist:250, lowerBout:375, waistPos:0.60,
-                 holeCx:0.387, holeCy:0.5, holeR:0.140 },
-  'violin4-4': { bodyLen:356, upperBout:166, waist:110, lowerBout:203, waistPos:0.58,
-                 holeCx:0.5, holeCy:0.5, holeR:0.001 },
+  dreadnought: { bodyLen:508, lowerBout:394, holeCx:0.382, holeCy:0.5, holeR:0.1332 },
+  om:          { bodyLen:487, lowerBout:375, holeCx:0.387, holeCy:0.5, holeR:0.140 },
 };
-function parametricOutline(preset){
-  const { upperBout, waist, lowerBout, waistPos } = preset;
-  const pts = []; const N=40;
-  for(let i=0;i<=N;i++){
-    const t = i/N; let halfW;
-    if(t < waistPos){
-      const tt = t/waistPos;
-      halfW = (waist/2 + (upperBout/2-waist/2)*Math.cos(tt*Math.PI/2)) / 1000;
-    } else {
-      const tt = (t-waistPos)/(1-waistPos);
-      halfW = (waist/2 + (lowerBout/2-waist/2)*Math.sin(tt*Math.PI/2)) / 1000;
-    }
-    pts.push({ t, halfW });
-  }
-  const outline = [];
-  pts.forEach(p=> outline.push({ fx: p.t, fy: 0.5 + p.halfW/(preset.lowerBout/1000) }));
-  for(let i=pts.length-1;i>=0;i--) outline.push({ fx: pts[i].t, fy: 0.5 - pts[i].halfW/(preset.lowerBout/1000) });
-  return outline;
-}
 
 document.getElementById('outlinePreset').onchange = e=>{
   const key = e.target.value;
   if(key==='custom') return;
   const p = OUTLINE_PRESETS[key];
-  // Dreadnought and OM now use the same DXF-digitized outlines (200+ points,
+  // Dreadnought and OM use the same DXF-digitized outlines (200+ points,
   // extracted from real CAD files) as the paired Visualizer, ported over and
-  // axis-swapped to this tool's fx=length/fy=width convention -- these are
-  // real body shapes, not the cosine/sine approximation below. Violin has no
-  // such data on either side yet, so it still falls back to the parametric
-  // curve; that one's an approximation and known to be one.
-  GEO.outlinePts = DXF_OUTLINES[key] ? DXF_OUTLINES[key].map(pt=>({fx:pt.fx, fy:pt.fy})) : parametricOutline(p);
+  // axis-swapped to this tool's fx=length/fy=width convention.
+  GEO.outlinePts = DXF_OUTLINES[key].map(pt=>({fx:pt.fx, fy:pt.fy}));
   GEO.outlineClosed = true;
   GEO.Lx = p.bodyLen/1000; GEO.Ly = p.lowerBout/1000;
   GEO.holeCx = p.holeCx; GEO.holeCy = p.holeCy; GEO.holeR = p.holeR;
