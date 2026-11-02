@@ -172,6 +172,7 @@ def main():
         onOptimizerTrace=lambda *a: bridge_call('onOptimizerTrace', *a),
         onOptimizerDone=lambda *a: bridge_call('onOptimizerDone', *a),
         onOptimizerError=lambda *a: bridge_call('onOptimizerError', *a),
+        onOptimizerLog=lambda *a: bridge_call('onOptimizerLog', *a),
         onManualEvalDone=lambda *a: bridge_call('onManualEvalDone', *a),
         onManualEvalError=lambda *a: bridge_call('onManualEvalError', *a),
         onBareModesResult=lambda *a: bridge_call('onBareModesResult', *a),

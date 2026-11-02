@@ -19,6 +19,14 @@ That ceiling is what led to the desktop build in [desktop/](desktop/). Rather th
 
 Of note, a fair number of the fixes along the way came from the plate shape itself. The fixed-topology presets (X-brace, fan, falcate) used to run right off the edge of the traced body, because the only thing keeping them inside was a soft penalty in the search, and the search never actually moves a fixed brace. I now clip them exactly to the outline instead. Similarly, Novel's mirror line was hard-coded to the center of the drawing window, which looked fine on a perfectly centered body and decidedly less fine on a lopsided hand-trace. It now uses the traced outline's actual area-weighted centroid.
 
+The most recent change came from checking the solver against ANSYS. To do so, I exported an Experimental design as a STEP file, gave the top a fixed support around its edge, and ran a modal analysis. Eight of the first nine modes landed within 3% of the tool. The third did not: 406Hz in the tool against 359Hz in ANSYS, a stubborn 13% gap. The likely culprit was the plate theory. The solver treated the top as a thin (Kirchhoff) plate, which assumes the wood is infinitely stiff in shear through its thickness. Spruce's rolling shear modulus is about 0.04GPa. That assumption overstates the stiffness of short cross-grain bends, which are exactly the bends that live between closely spaced braces.
+
+My first fix split the deflection into a bending part and a shear part. It was cheap, but it fell short. At a 100 × 40mm wavelength, real shear lowers the frequency by 21%, and the split only found 14% of it. The reason is that spruce's two through-thickness shear moduli differ by about 15×, and the split can't represent the shear patterns that difference creates. In order to get all of it, the top is now a full Reissner-Mindlin plate, with the shear strain stored on the links between grid nodes. That roughly tripled the size of the system the solver has to factor. Switching to a symmetric factorization, and reusing one factorization for both the mode solve and the deflection solve, brought a full search back to about 2× its old time.
+
+The next ANSYS run had every mode 5–15% above the tool, which was the opposite direction from before. Part of that was my own setup. The bridge body had picked up the spruce brace material, so ANSYS weighed it at 13.7g instead of 33.2g, an entirely self-inflicted 19g. With 850kg/m³ hardwood on the bridge, the gap shrank to 3–11%, still with ANSYS high. To find the rest, I rebuilt the design from its exported simulation file and re-solved it on finer and finer grids. Every mode rose, by 2–7% between GN 60 and GN 160, which is about the size of the remaining gap. In other words, the search had been tuning designs on a grid that reads a few percent soft. Of note, an X-brace I tested went the other way, falling 2–6% over the same range, so no single factor fits every design.
+
+In order to fix this without making the polish 10–50× slower, the polish now measures a convergence factor for each target on the coarse winner, aims at shifted targets on its own grid, and hands the card a re-solve on the fine grid. My first version paired modes between the two grids by strength. When two weak modes swapped places, it compared a 477Hz mode against a 615Hz one. Following each mode by its shape fixed that. Whether the corrected cards land within a percent or two of ANSYS is the next run I have queued up.
+
 ## Using the browser app
 
 Open the [live site](https://lucalo44.github.io/Modal-Guitar-Bracing-Tool/) in a recent Chrome, Edge, or Firefox. The first load downloads numpy and scipy for Pyodide, so the badge in the top-right reads "Loading physics engine…" for anywhere from a few seconds to about a minute. Once it says "Engine ready," you're good to go. (If it hangs much longer than that, an ad-blocker blocking pyscript.net or the CDN is the usual culprit.) You can also just open `index.html` locally, although Chrome and Edge block the folder picker on `file://` pages, so use "Select data folder (compatibility mode)" if you need to import measured data that way.
@@ -27,7 +35,7 @@ The app walks you through four tabs, from left to right:
 
 1. **Setup.** Pick a preset outline (Dreadnought or OM/000) or choose Custom and trace your own. In order to trace, upload a photo or scan of a top, scale it with the slider, and click around the edge with the ● Outline tool; ○ Sound hole and ▱ Bridge work the same way. Then set:
    1. The body length, width, and thickness (the Dreadnought default is 508 × 394 mm at 2.8 mm thick).
-   2. The top material. Sitka spruce and western red cedar are built in, or you can enter your own along-grain, across-grain, and shear moduli.
+   2. The top material. Sitka spruce and western red cedar are built in, or you can enter your own along-grain, across-grain, and shear moduli, including the two through-thickness shear moduli (G_LT and G_RT).
    3. The edge boundary condition (clamped by default, which matches a CAD "fixed support").
    4. The string load (300 N by default), the bridge torque, and the maximum deflection you'll allow at the bridge (2 mm by default).
 
@@ -60,7 +68,7 @@ python app.py
 A native window opens with the same four tabs as the browser app, and "Engine ready" appears almost immediately, since there's nothing to download. Everything above applies as-is, with three differences:
 
 1. **Patterns run in parallel.** Each ticked pattern solves on its own CPU core, so the progress bar can jump around as updates from different patterns interleave. That's a side effect of genuine parallelism, not a bug, although I'll admit it looks a smidge alarming the first time.
-2. **STEP export.** Each result card gets a **⬇ STEP** button that writes the top and braces as named solid bodies in millimeters, plus a simulation-info JSON file alongside it (materials, edge condition, load, and the predicted frequencies) for setting up a matching FEA model. A dropdown chooses whether braces become one body per material, one body per brace, or shared-face geometry for SpaceClaim's Share Topology. This needs `cadquery-ocp` (about 65 MB); without it, the app still runs and the button explains how to install it.
+2. **STEP export.** Each result card gets a **⬇ STEP** button that writes the top and braces as named solid bodies in millimeters, plus a simulation-info JSON file alongside it (materials, edge condition, load, and the predicted frequencies) for setting up a matching FEA model. A dropdown chooses whether braces become one body per material, one body per brace, or shared-face geometry for Share Topology in SpaceClaim or Discovery. This needs `cadquery-ocp` (about 65 MB); without it, the app still runs and the button explains how to install it.
 3. **Native save dialogs.** Every export uses your operating system's Save dialog.
 
 Of note, the desktop build is still a prototype that runs from source. It isn't packaged as an installable app yet. More detail on how it's wired together lives in [desktop/README.md](desktop/README.md).
@@ -71,7 +79,7 @@ Every design, whether it comes out of the search or was drawn by hand, goes thro
 
 ### The plate
 
-The top is a thin, flat plate. Wood is wildly different along and across the grain (spruce is roughly 8–15× stiffer along it), so the plate is orthotropic rather than having one stiffness in every direction. Its bending under a load q is governed by
+The top is a flat plate. Wood is wildly different along and across the grain (spruce is roughly 8–15× stiffer along it), so the plate is orthotropic rather than having one stiffness in every direction. Its bending under a load q is governed by
 
 > D₁₁·∂⁴w/∂x⁴ + 2(D₁₂ + 2D₆₆)·∂⁴w/∂x²∂y² + D₂₂·∂⁴w/∂y⁴ = q
 
@@ -86,15 +94,41 @@ Of note, ν_RL is never entered directly. It always comes from reciprocity, ν_R
 
 The equation is solved with finite differences on a grid laid over the traced outline, with the soundhole cut out. The stiffness operator is built from three directional second-derivative operators, each squared before they're combined, which guarantees it never produces spurious zero- or negative-energy modes. The plate's mass per unit area is simply ρh.
 
+### Through-thickness shear
+
+The equation above is thin-plate (Kirchhoff) theory. It assumes the plate's cross-sections stay perpendicular to its surface as it bends, which is only exact if the wood is infinitely stiff in shear through its thickness. Wood isn't. Its rolling shear modulus G_RT, which resists shear in the width-thickness plane, is about 0.04GPa for spruce, roughly 1/250 of Eₗ. A 3D solid FEA model includes it, so by default the top is a Reissner-Mindlin plate instead.
+
+Each cross-section rotates by
+
+> ψ = −∇w + γ
+
+where γ = (γ_x, γ_y) is the through-thickness shear strain. The curvatures come from that rotation rather than from w alone:
+
+- κ_xx = ∂ψ_x/∂x
+- κ_yy = ∂ψ_y/∂y
+- twist = ∂ψ_x/∂y + ∂ψ_y/∂x
+
+The bending energy uses the same D terms as above. The shear adds
+
+> ½·κ·h·(G_LT·γ_x² + G_RT·γ_y²)
+
+per unit area, with the shear correction factor κ = 5/6. The rotation also carries rotary inertia, ρh³/12 per unit area.
+
+On the grid, w stays on the nodes, and each shear strain lives on the link between two neighbouring nodes. As G_LT and G_RT grow, γ goes to zero, and the model becomes the thin plate exactly. Because γ = 0 is always allowed, the grid can't shear-lock. Because every γ pattern costs shear energy, it can't develop spurious zero-energy modes either.
+
+The effect depends on the wavelength of the bend. On a 2.8mm spruce top, shear lowers a mode with a 300mm wavelength by under 1%, one at 150mm by about 3%, and one at 40mm by over 20%. Bends across the grain are hit hardest. Long, whole-body modes barely move. Modes that concentrate between closely spaced braces can drop by several percent, which is where a thin-plate model disagrees with FEA.
+
+To match an FEA material, put x along the body's length (L), y across it (R), and z through the thickness (T). Shear modulus XZ is then G_LT, and shear modulus YZ is G_RT. Young's modulus Z and Poisson's ratios YZ and XZ don't enter the plate model.
+
 ### The braces
 
 Each brace is modeled as a Timoshenko beam glued along its path, straight or curved, and tapered in both height and width from its center to its tips. Three effects go into its stiffness:
 
 1. **Bending.** A brace glued to the top bends together with a strip of the plate about their shared neutral axis, like a T-beam, rather than about its own center, which makes it several times stiffer than the brace alone. Its bending stiffness EI is that of the whole T-section, minus the strip of plate the plate model already counts.
 2. **Shear.** Braces are tall, so they also deform in shear, which softens a brace's effective bending stiffness to about EI / (1 + EI·k² / κGA) for a bend of wavenumber k along it. This matters a lot for wood (E/G ≈ 15) and even more for carbon fiber (E/G ≈ 27). The shear modulus G comes from the brace shear model chosen in Setup.
-3. **Twisting.** Because a brace is glued down, it turns with the plate's slope across it, and resists that twist with a torsional stiffness GJ.
+3. **Twisting.** Because a brace is glued down, it turns with the plate's cross-section rotation across it (the slope ∂w/∂n minus the plate's shear strain in that direction), and resists that twist with a torsional stiffness GJ.
 
-Each brace's mass (density × cross-section × length) is spread onto the plate grid along its length, at the spacing set by the brace discretization slider. The bridge is handled the same way, as a hardwood block glued over its footprint that adds both stiffness and mass.
+Each brace's mass (density × cross-section × length) is spread onto the plate grid along its length, at the spacing set by the brace discretization slider. The bridge is handled the same way, as a hardwood block glued over its footprint that adds bending stiffness, through-thickness shear stiffness (G_b·h_b), mass, and rotary inertia about the plate's mid-plane.
 
 ### The edge
 
@@ -123,13 +157,27 @@ In Auto-generate, every candidate design gets a single cost, and lower is better
 6. **Brace count.** For Novel and Experimental, 0.35 for each brace beyond the first five, so an extra brace has to earn its place.
 7. **Geometry.** Penalties for brace material outside the outline, on the soundhole, or stacked on another brace.
 
-The search itself is simulated annealing. Each iteration nudges the design (resizing, moving, bending, adding, or removing braces, depending on the pattern), solves it, and accepts it if the cost dropped. A worse design is also accepted with probability exp(−Δcost / 40T), where the temperature T cools geometrically over the run. Early on, while T is high, the search wanders freely and escapes poor layouts; by the end, it only accepts improvements and refines the best one it found. Since each search solves the plate hundreds of times, it runs on a coarse grid (34 points by default), and the winner is then polished with a short extra search at a finer resolution.
+The search itself is simulated annealing. Each iteration nudges the design (resizing, moving, bending, adding, or removing braces, depending on the pattern), solves it, and accepts it if the cost dropped. A worse design is also accepted with probability exp(−Δcost / 40T), where the temperature T cools geometrically over the run. Early on, while T is high, the search wanders freely and escapes poor layouts; by the end, it only accepts improvements and refines the best one it found. Since each search solves the plate hundreds of times, it runs on a coarse grid (34 points by default), and the winner is then polished on a finer grid, as described next.
+
+### The polish and grid correction
+
+The polish is a short, cooler annealing run on a finer grid (GN 50 or more), warm-started from the coarse winner. The card then reports a re-solve on the final display grid, GN 150 by default.
+
+A finite-difference answer only converges as the grid spacing goes to zero, and with braces on the top, the polish grid is still a few percent off. The error has two sources. Each brace's stiffness and mass are spread onto its four nearest grid nodes, and the clamped edge follows the grid in steps. Both depend on where the braces and edge fall relative to the nodes, so the error can go either way. On one five-brace Experimental top, every mode rose 2–7% from GN 60 to GN 160. On an X-brace, the modes fell 2–6%. Higher modes, with shorter wavelengths, move the most.
+
+To correct for this, the coarse winner is solved once on both grids. For each target i,
+
+> k_i = f_fine,i / f_polish,i
+
+is how far that target's mode moves between them. The polish then searches against f_t,i / k_i, with tolerance tol_i / k_i, and the deflection limit is divided by the deflection's own fine-to-polish ratio. Once the polished design is re-solved on the fine grid, each mode moves by its k_i again and lands on f_t,i. For example, a 400Hz target whose mode rises 4% between the grids is polished toward 400 / 1.04 ≈ 385Hz.
+
+Modes are followed between the grids by shape, using the same MAC as the shape-matching cost. A pair needs a MAC above 0.5, and each fine-grid mode goes to only one target. A target whose mode can't be followed uses the median of the other ratios. The card reports those same modes from the fine solve, rather than re-pairing them by strength. The factors are measured on the coarse winner, not the final design. They drift as the polish changes the design, so a few percent can remain on individual modes, and the fine solve shows that residual. Each card lists the factors it used next to "Grid correction."
 
 ### How accurate it is
 
-The solver was checked against the one case with an exact answer, a simply supported rectangular orthotropic plate (Navier's series solution), and matched it to within about 1% across the first several modes. On real tops, a few simplifications are worth keeping in mind:
+The solver was checked against the one case with an exact answer, a simply supported rectangular orthotropic plate. The thin plate matches Navier's series solution to within 0.3% across the first six modes. With through-thickness shear on, a 2.8 mm spruce plate matches the closed-form Mindlin solution (including rotary inertia) to within 0.2%. A 10 mm plate, where shear matters much more, converges to about 1% below it, because the grid's simply supported edge lets the shear strain run along the edge while the closed-form solution doesn't. On real tops, a few simplifications are worth keeping in mind:
 
-1. Coarse grids overestimate stiffness, so frequencies (especially the higher modes) drop slightly as the resolution increases.
+1. The grid isn't fully converged. Depending on where the braces fall on it, frequencies move a few percent in either direction as the resolution increases. The grid correction above handles most of this, and GN 150 is within about 1–3% of converged.
 2. The top is flat, so doming isn't represented.
 3. Braces have rectangular, tapered cross-sections, so peaked or scalloped profiles will behave somewhat differently.
 4. The grain is assumed to run along the body's length.

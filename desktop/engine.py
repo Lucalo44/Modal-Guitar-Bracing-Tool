@@ -26,8 +26,9 @@
 import json, math, random, asyncio, os, time, threading
 import numpy as np
 from scipy import sparse
-from scipy.sparse.linalg import eigsh, spsolve
+from scipy.sparse.linalg import eigsh, splu, LinearOperator
 from scipy.spatial import cKDTree
+from scipy.sparse.csgraph import connected_components
 
 # ── JS bridge shim ──────────────────────────────────────────────────────
 # In the browser build, progress/done/error events call straight into the
@@ -45,6 +46,7 @@ BRIDGE = {
     'onManualEvalError': lambda *a, **k: None,
     'onBareModesResult': lambda *a, **k: None,
     'onBareModesError': lambda *a, **k: None,
+    'onOptimizerLog': lambda *a, **k: None,
 }
 
 def set_bridge(**callbacks):
@@ -79,6 +81,75 @@ def _dilate(mask):
         for dj in (-1, 0, 1):
             out |= np.roll(np.roll(mask, dj, 0), di, 1)
     return out
+
+ND_MIN_SIZE = 50000   # unknowns; above this, nested dissection beats SuperLU's MMD ordering
+
+def _bfs_levels(G, start):
+    """BFS distance of every node of the connected graph G (csr) from start."""
+    lev = np.full(G.shape[0], -1); lev[start] = 0
+    front, d = np.array([start]), 0
+    while front.size:
+        nb = np.unique(G[front].indices)
+        nb = nb[lev[nb] < 0]
+        d += 1; lev[nb] = d; front = nb
+    return lev
+
+def _nested_dissection(A, leaf=64):
+    """Fill-reducing ordering for a symmetric-pattern matrix by recursive
+    graph bisection. Each piece is split by the BFS level (from a
+    pseudo-peripheral node) that halves its node count; the two halves are
+    ordered first and that separator level last. On these 2D plate grids
+    the fill grows about as n*log(n), where minimum degree (MMD) degrades
+    badly past ~50k unknowns: at GN 200 (69k unknowns) it cuts the
+    factorization from ~50 s to ~15 s."""
+    G = sparse.csr_matrix(A, copy=True); G.data[:] = 1
+    G = ((G + G.T) > 0).astype(np.int8).tocsr()
+    G.setdiag(0); G.eliminate_zeros()
+    order, todo = [], [(np.arange(G.shape[0]), False)]
+    # Iterative post-order: a piece is pushed back as "emit its separator"
+    # after its two halves, so the separators of outer cuts come out last.
+    while todo:
+        nodes, is_sep = todo.pop()
+        if is_sep or nodes.size <= leaf:
+            order.append(nodes); continue
+        sub = G[nodes][:, nodes].tocsr()
+        ncomp, lab = connected_components(sub, directed=False)
+        if ncomp > 1:
+            todo.extend((nodes[lab == c], False) for c in range(ncomp))
+            continue
+        lev = _bfs_levels(sub, int(np.argmax(_bfs_levels(sub, 0))))
+        L = int(lev.max())
+        if L < 3:
+            order.append(nodes); continue
+        cnt = np.cumsum(np.bincount(lev, minlength=L+1))
+        m = min(max(int(np.searchsorted(cnt, nodes.size/2)), 1), L-1)
+        todo.append((nodes[lev == m], True))
+        todo.append((nodes[lev > m], False))
+        todo.append((nodes[lev < m], False))
+    return np.concatenate(order)
+
+class _PermutedLU:
+    """splu of P A P^T, solving A x = b."""
+    def __init__(self, lu, p):
+        self.lu, self.p = lu, p
+    def solve(self, b):
+        y = self.lu.solve(np.asarray(b)[self.p])
+        x = np.empty_like(y); x[self.p] = y
+        return x
+
+def _factor_sym(A):
+    """Sparse LU of a symmetric matrix, ordered for symmetry and pivoting
+    on the diagonal: about half the fill and a third of the time of
+    SuperLU's default ordering for these plate systems. Large systems (fine
+    display grids) are pre-ordered by nested dissection instead."""
+    A = sparse.csc_matrix(A)
+    if A.shape[0] >= ND_MIN_SIZE:
+        p = _nested_dissection(A)
+        lu = splu(A[p][:, p].tocsc(), permc_spec='NATURAL', diag_pivot_thresh=0.001,
+                  options=dict(SymmetricMode=True))
+        return _PermutedLU(lu, p)
+    return splu(A, permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=0.001,
+                options=dict(SymmetricMode=True))
 
 def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
     """Finite-difference plate grid: curvature operators Lxx, Lyy, Lxy and
@@ -175,10 +246,81 @@ def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
         prow = np.broadcast_to(np.arange(n_pins)[:, None], pid.shape)
         P = sparse.coo_matrix((Wp[ok], (prow[ok], pid[ok])), shape=(n_pins, N)).tocsr()
     mass_scale = np.where(inside[nodes_j, nodes_i], 1.0, 1e-6)
+    Xmap, Sx, Sx_ends = _shear_links(node_id, inside, unknown, free, bc_mode, dd, 1, 0)
+    Ymap, Sy, Sy_ends = _shear_links(node_id, inside, unknown, free, bc_mode, dd, 0, 1)
+    def links_at(lmap, j, i):
+        ok = (j >= 0) & (j < lmap.shape[0]) & (i >= 0) & (i < lmap.shape[1])
+        out = np.full(j.shape, -1, dtype=np.int64)
+        out[ok] = lmap[j[ok], i[ok]]
+        return out
+    def link_op(terms, n_cols):
+        R, C, V = [], [], []
+        for ids, c in terms:
+            ok = ids >= 0
+            R.append(rows[ok]); C.append(ids[ok]); V.append(np.full(ok.sum(), c))
+        return sparse.coo_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))),
+                                 shape=(max(ci.size, 1), n_cols)).tocsr()
+    # Derivatives of the shear strains at every curvature row: compact
+    # along a link's own direction, and across it with the same 2*dd span
+    # as Lxy, so each twist row stays centred on its node.
+    nlx, nly = int(Sx.shape[0]), int(Sy.shape[0])
+    Gxx = link_op([(links_at(Xmap, cj, ci), 1.0/dd), (links_at(Xmap, cj, ci-1), -1.0/dd)], nlx)
+    Gyy = link_op([(links_at(Ymap, cj, ci), 1.0/dd), (links_at(Ymap, cj-1, ci), -1.0/dd)], nly)
+    q = 0.25/dd
+    Gxy = link_op([(links_at(Xmap, cj+1, ci), q), (links_at(Xmap, cj+1, ci-1), q),
+                   (links_at(Xmap, cj-1, ci), -q), (links_at(Xmap, cj-1, ci-1), -q)], nlx)
+    Gyx = link_op([(links_at(Ymap, cj, ci+1), q), (links_at(Ymap, cj-1, ci+1), q),
+                   (links_at(Ymap, cj, ci-1), -q), (links_at(Ymap, cj-1, ci-1), -q)], nly)
     return {'Lxx': Lxx, 'Lyy': Lyy, 'Lxy': Lxy, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
             'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id, 'bc_mode': bc_mode,
             'free_mask': free, 'P': P, 'mass_scale': mass_scale, 'row_xy': row_xy,
-            'inside': inside, 'bbx0': bbx0, 'bby0': bby0}
+            'inside': inside, 'bbx0': bbx0, 'bby0': bby0,
+            'nlx': nlx, 'nly': nly, 'Xmap': Xmap, 'Ymap': Ymap, 'Sx': Sx, 'Sy': Sy,
+            'Sx_ends': Sx_ends, 'Sy_ends': Sy_ends, 'Gxx': Gxx, 'Gyy': Gyy, 'Gxy': Gxy, 'Gyx': Gyx}
+
+def _shear_links(node_id, inside, unknown, free, bc_mode, dd, di, dj):
+    """The grid links one through-thickness shear strain lives on, along one
+    direction (di, dj): a link joins neighbouring nodes a and b and counts
+    when either end is on the plate. Its other end is either another
+    unknown, a clamped support (w = 0), or absent: beyond a free edge or the
+    sound hole, and beyond a simply supported ghost node. Returns the link
+    id at each link position (-1 where there's none), the (links x N) slope
+    operator (w[b] - w[a]) / dd along each link, and each link's end ids
+    (b is -1 at a support)."""
+    ny, nx = node_id.shape
+    A = node_id[:ny-dj, :nx-di].ravel(); B = node_id[dj:, di:].ravel()
+    on_plate = (inside[:ny-dj, :nx-di] | inside[dj:, di:]).ravel()
+    ua = unknown[:ny-dj, :nx-di].ravel(); ub = unknown[dj:, di:].ravel()
+    fa = free[:ny-dj, :nx-di].ravel(); fb = free[dj:, di:].ravel()
+    both = on_plate & ua & ub
+    to_support = on_plate & (ua != ub) & (bc_mode == 'clamped') & ~(fa | fb)
+    keep = both | to_support
+    n = int(keep.sum())
+    lmap = np.full(keep.size, -1, dtype=np.int64); lmap[keep] = np.arange(n)
+    # At a support the link's one unknown end is a, so its slope is -w[a]/dd.
+    sgn = np.where(ua, 1.0, -1.0)[keep]
+    a_ids = np.where(ua, A, B)[keep]; b_ids = np.where(both, B, -1)[keep]
+    r = np.arange(n); keep_b = b_ids >= 0
+    S = sparse.coo_matrix((np.concatenate([-sgn/dd, np.full(int(keep_b.sum()), 1.0/dd)]),
+                           (np.concatenate([r, r[keep_b]]), np.concatenate([a_ids, b_ids[keep_b]]))),
+                          shape=(n, int(unknown.sum()))).tocsr()
+    return lmap.reshape(ny-dj, nx-di), S, (a_ids, b_ids)
+
+def _link_bilinear(grid, xs, ys, axis):
+    """Bilinear interpolation of a link field (the x-links' strains for
+    axis 0, the y-links' for axis 1) at physical points. Links sit halfway
+    between their nodes, so their lattice is offset half a cell. Returns
+    (ids, W) like _bilinear_corners; absent links count as zero."""
+    lmap = grid['Xmap'] if axis == 0 else grid['Ymap']
+    dd = grid['dd']; ny, nx = lmap.shape
+    fx = (np.asarray(xs, dtype=float) - grid['bbx0']) / dd - (0.5 if axis == 0 else 0.0)
+    fy = (np.asarray(ys, dtype=float) - grid['bby0']) / dd - (0.5 if axis == 1 else 0.0)
+    i0 = np.clip(np.floor(fx).astype(int), 0, nx-2); j0 = np.clip(np.floor(fy).astype(int), 0, ny-2)
+    tx = np.clip(fx - i0, 0.0, 1.0); ty = np.clip(fy - j0, 0.0, 1.0)
+    ci = np.stack([i0, i0+1, i0, i0+1], axis=1); cj = np.stack([j0, j0, j0+1, j0+1], axis=1)
+    W = np.stack([(1-tx)*(1-ty), tx*(1-ty), (1-tx)*ty, tx*ty], axis=1)
+    ids = lmap[cj, ci]
+    return ids, np.where(ids >= 0, W, 0.0)
 
 def _dim_at(center, tip, t):
     """Cross-section dimension at position t in [0,1] along a brace: tip
@@ -290,6 +432,7 @@ def _brace_stations(b, Lx, Ly, spacing):
 
 BRACE_FLANGE_WIDTH = 20.0   # width of top plate acting with each brace, in plate thicknesses (result is insensitive above ~10)
 BRACE_SHEAR_FACTOR = 5.0/6.0   # Timoshenko shear correction for a rectangular web
+PLATE_SHEAR_FACTOR = 5.0/6.0   # same correction for the plate's through-thickness shear (Reissner-Mindlin)
 
 def brace_shear_modulus(b):
     """Shear modulus a brace resists shear and twist with: the along-grain
@@ -325,10 +468,16 @@ def _assemble_rows(ids, g, coef):
     keep = (rows >= 0) & (cols >= 0) & (vals != 0)
     return rows[keep], cols[keep], vals[keep]
 
-def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, iso_shear=False):
+def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, iso_shear=False, plate_shear=False):
     """Each brace as a Timoshenko beam embedded in the plate, plus its
-    resistance to twisting. Returns (K, n_aux): K is (N+n_aux) square, where
-    the n_aux extra unknowns are the braces' shear strains (no mass).
+    resistance to twisting. Returns (K, n_aux): K is (N+n_shear+n_aux)
+    square, where n_shear counts the plate's shear strains (stored right
+    after w; 0 without plate shear) and the n_aux extra unknowns after those
+    are the braces' shear strains (no mass).
+
+    With plate shear, a brace still follows the plate's deflection w, but
+    it twists with the plate's cross-section rotation, the slope across the
+    brace minus the plate's shear strain in that direction.
 
     Bending: energy 0.5*EI*(w'' - gamma')^2 along the arc length, with w at
     any point on the brace bilinearly interpolated from the 4 surrounding
@@ -365,6 +514,7 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
 
     Same per-unit-area scaling as the plate operator (hence /dd^2)."""
     dd = grid['dd']; N = grid['N']
+    n_shear = grid['nlx'] + grid['nly'] if plate_shear else 0
     parts = []
     n_aux = 0
     for b in braces:
@@ -379,7 +529,7 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
         ids, W = _bilinear_corners(grid, xy[:, 0], xy[:, 1])
         a = np.array([1.0, -2.0, 1.0]) / (hs*hs)
         # Shear strains between stations: gamma_j sits between stations j and j+1.
-        gam = N + n_aux + np.arange(n-1)
+        gam = N + n_shear + n_aux + np.arange(n-1)
         n_aux += n-1
         # Interior station k uses stations k-1, k, k+1 -> 12 (node, weight)
         # pairs, plus gamma' from the two strains either side of it.
@@ -415,11 +565,18 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
         idsP, WP = _bilinear_corners(grid, xy[:, 0] + dl*nrm[:, 0], xy[:, 1] + dl*nrm[:, 1])
         idsM, WM = _bilinear_corners(grid, xy[:, 0] - dl*nrm[:, 0], xy[:, 1] - dl*nrm[:, 1])
         p_ids = np.concatenate([idsP, idsM], axis=1); p_w = np.concatenate([WP, -WM], axis=1) / (2.0*dl)
+        if n_shear:
+            # minus the plate's shear strain across the brace, n . (gamma_x, gamma_y)
+            gx_ids, gx_w = _link_bilinear(grid, xy[:, 0], xy[:, 1], 0)
+            gy_ids, gy_w = _link_bilinear(grid, xy[:, 0], xy[:, 1], 1)
+            p_ids = np.concatenate([p_ids, np.where(gx_ids >= 0, gx_ids + N, -1),
+                                    np.where(gy_ids >= 0, gy_ids + N + grid['nlx'], -1)], axis=1)
+            p_w = np.concatenate([p_w, -nrm[:, :1]*gx_w, -nrm[:, 1:]*gy_w], axis=1)
         j = np.arange(n-1)
         t_ids = np.concatenate([p_ids[j+1], p_ids[j]], axis=1)
         t_w = np.concatenate([p_w[j+1], -p_w[j]], axis=1) / hs
         parts.append(_assemble_rows(t_ids, t_w, G*_rect_torsion_constant(wm, hm) * hs / (dd*dd)))
-    size = N + n_aux
+    size = N + n_shear + n_aux
     if not parts:
         return sparse.csr_matrix((size, size)), 0
     rows = np.concatenate([p[0] for p in parts]); cols = np.concatenate([p[1] for p in parts])
@@ -748,34 +905,80 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     geom_penalty = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
     geom_penalty += brace_overlap_penalty(braces, Lx, Ly)
 
+    # Through-thickness (transverse) shear: G_LT in the length-thickness
+    # plane, G_RT (rolling shear, tiny in wood) in the width-thickness plane.
+    # Thin-plate theory treats both as infinite; real tops aren't, and a 3D
+    # FEA model isn't either. A payload without them solves as before.
+    Gxz, Gyz = geo.get('Gxz'), geo.get('Gyz')
+    plate_shear = bool(geo.get('plateShear', True)) and bool(Gxz) and bool(Gyz)
+    nlx, nly = (grid['nlx'], grid['nly']) if plate_shear else (0, 0)
+    n_shear = nlx + nly
+
     seg_len_mm = geo.get('braceSegMm')
     mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
     braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
     total_brace_mass_g = sum(mm)*1000.0
     K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy),
-                                            iso_shear=(geo.get('braceShearModel', 'iso') == 'iso'))
-    # Three separate directional terms, each squared for guaranteed
-    # positive-semi-definiteness (same principle the old single-operator
-    # isotropic solver relied on, just applied to three simpler
-    # direction-specific building blocks instead of one combined one --
-    # see build_grid's docstring for the validation this went through
-    # before being wired in here).
+                                            iso_shear=(geo.get('braceShearModel', 'iso') == 'iso'),
+                                            plate_shear=plate_shear)
+    # Bending energy D11*k_xx^2 + 2*D12*k_xx*k_yy + D22*k_yy^2 + D66*k_xy^2
+    # (k_xy the engineering twist), from three directional curvature
+    # operators, each squared for guaranteed positive-semi-definiteness --
+    # see build_grid's docstring for the validation these went through.
+    #
+    # With plate shear this is a Reissner-Mindlin plate: the cross-sections
+    # rotate by psi = -grad(w) + gamma, where gamma = (gamma_x, gamma_y) is
+    # the through-thickness shear strain, one unknown per grid link (after
+    # the N plate nodes). Curvatures come from psi, so each operator picks
+    # up gamma's derivatives; shear energy is kappa*h*(G_xz*gamma_x^2 +
+    # G_yz*gamma_y^2). As G grows, gamma -> 0 and this is exactly the thin
+    # plate. gamma = 0 is always admissible, so the grid can't shear-lock,
+    # and every gamma pattern costs shear energy, so there are no spurious
+    # zero-energy modes.
     Lxx, Lyy, Lxy = grid['Lxx'], grid['Lyy'], grid['Lxy']
-    K = D11*(Lxx.T@Lxx) + D22*(Lyy.T@Lyy) + D12*(Lxx.T@Lyy + Lyy.T@Lxx) + 4*D66*(Lxy.T@Lxy)
-    K_bridge, bridge_m, bridge_mass_g = _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly)
-    if K_bridge is not None:
-        K = K + K_bridge
-    braceM = braceM + bridge_m
-    # The braces' shear strains are extra unknowns after the N plate nodes
-    # (massless, so they never show up as modes); pad the plate's matrices
-    # to match and keep only the first N entries of every solution.
+    if plate_shear:
+        R = Lxx.shape[0]; Z = lambda r, c: sparse.csr_matrix((r, c))
+        Cxx = sparse.hstack([Lxx, -grid['Gxx'], Z(R, nly)], format='csr')
+        Cyy = sparse.hstack([Lyy, Z(R, nlx), -grid['Gyy']], format='csr')
+        Cxy = sparse.hstack([2*Lxy, -grid['Gxy'], -grid['Gyx']], format='csr')
+    else:
+        Cxx, Cyy, Cxy = Lxx, Lyy, 2*Lxy
+    def bending(d11, d22, d12, d66, S=None):
+        W = (lambda A: A) if S is None else (lambda A: S @ A)
+        return d11*(Cxx.T@W(Cxx)) + d22*(Cyy.T@W(Cyy)) + d12*(Cxx.T@W(Cyy) + Cyy.T@W(Cxx)) + d66*(Cxy.T@W(Cxy))
+    K = bending(D11, D22, D12, D66)
+    br = _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly)
+    bridge_mass_g = 0.0
+    if br is not None:
+        K = K + bending(*br['D'], S=br['cover'])
+        braceM = braceM + br['m_nodes']
+        bridge_mass_g = br['mass_g']
+    m_w = rho*h*grid['mass_scale'] + braceM
+    M = sparse.diags(np.concatenate([m_w, np.zeros(n_shear + n_aux)]), format='csr')
+    if plate_shear:
+        cx, cy = (br['link_cover'] if br is not None else (np.zeros(nlx), np.zeros(nly)))
+        Gbh = br['Gh'] if br is not None else 0.0
+        K = K + sparse.block_diag((sparse.csr_matrix((N, N)),
+                                   sparse.diags(PLATE_SHEAR_FACTOR*(h*Gxz + Gbh*cx)),
+                                   sparse.diags(PLATE_SHEAR_FACTOR*(h*Gyz + Gbh*cy))), format='csr')
+        # Rotary inertia: the cross-sections' rotation psi carries
+        # rho*h^3/12 per area (plus the bridge block's, about the plate's
+        # mid-plane), with psi_x = -w,x + gamma_x on each x-link.
+        Rx = sparse.hstack([-grid['Sx'], sparse.identity(nlx), Z(nlx, nly)], format='csr')
+        Ry = sparse.hstack([-grid['Sy'], Z(nly, nlx), sparse.identity(nly)], format='csr')
+        Ib = br['I'] if br is not None else 0.0
+        M_rot = Rx.T@sparse.diags(rho*h**3/12.0 + Ib*cx)@Rx + Ry.T@sparse.diags(rho*h**3/12.0 + Ib*cy)@Ry
+        M = M + sparse.block_diag((M_rot, sparse.csr_matrix((n_aux, n_aux))), format='csr') if n_aux else M + M_rot
+    # The braces' shear strains are extra unknowns after the plate's (massless,
+    # so they never show up as modes); pad the plate's matrices to match and
+    # keep only the first N entries (w) of every solution.
     pad = lambda A: sparse.block_diag((A, sparse.csr_matrix((n_aux, n_aux))), format='csr') if n_aux else A
     K = pad(K) + K_brace
     if grid.get('P') is not None:
-        P = grid['P'] if not n_aux else sparse.hstack([grid['P'], sparse.csr_matrix((grid['P'].shape[0], n_aux))])
+        P = sparse.hstack([grid['P'], sparse.csr_matrix((grid['P'].shape[0], n_shear + n_aux))]) if n_shear + n_aux else grid['P']
         K = K + SS_PIN_PENALTY*float(np.max(K.diagonal())) * (P.T @ P)
     K = (K+K.T)*0.5
-    M = sparse.diags(np.concatenate([rho*h*grid['mass_scale'] + braceM, np.zeros(n_aux)]))
+    M = (M+M.T)*0.5
 
     # ── Eigenmodes ──
     # Enough modes to cover the whole target band (up to 1.3x the highest
@@ -787,19 +990,26 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     n_request = min(max(n_modes_needed+6, 2*n_modes_needed+8), k_max)
     sigma = (2*math.pi*1.0)**2
     Kc, Mc = K.tocsc(), M.tocsc()
+    # One factorization of K - sigma*M serves every eigsh call below and,
+    # on a supported plate, the static solve too.
+    try:
+        lu_shift = _factor_sym(Kc - sigma*Mc)
+    except Exception as exc:
+        return {'ok': False, 'reason': f'factor_failed:{exc}'}
+    OPinv = LinearOperator(Kc.shape, matvec=lu_shift.solve, dtype=float)
     while True:
         try:
-            vals, vecs = eigsh(Kc, k=max(1,n_request), M=Mc, sigma=sigma, which='LM')
+            vals, vecs_full = eigsh(Kc, k=max(1,n_request), M=Mc, sigma=sigma, which='LM', OPinv=OPinv)
         except Exception as exc:
             return {'ok': False, 'reason': f'eigsh_failed:{exc}'}
         order = np.argsort(vals)
-        vals, vecs = vals[order], vecs[:N, order]
+        vals, vecs = vals[order], vecs_full[:N, order]
         freqs_all = np.sqrt(np.clip(vals,0,None))/(2*math.pi)
         if f_hi is None or freqs_all[-1] >= f_hi or n_request >= k_max:
             break
         n_request = min(2*n_request, k_max)
     # Mass-normalize (phi^T M phi = 1) so mode strengths are comparable.
-    m_diag = rho*h*grid['mass_scale'] + braceM
+    m_diag = m_w
     vecs = vecs / np.sqrt(np.einsum('ij,i,ij->j', vecs, m_diag, vecs))[None, :]
     # ── Static deflection under bridge/string load ──
     # The load is spread uniformly over the bridge footprint (traced shape,
@@ -841,19 +1051,27 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # readback and each mode's bridge participation are both w_node . field.
     w_node = _spread_to_nodes(grid, PX, PY, w_s)
     idxs = np.nonzero(w_node)[0]; w = w_node[idxs]
-    F = np.zeros(N + n_aux)
+    F = np.zeros(N + n_shear + n_aux)
     # K is in point-collocation form (D∇⁴w = q, q a pressure in N/m²), same
     # as the brace-mass lumping above -- nodal forces become an equivalent
     # pressure by dividing by the nodal area (dd²).
     F[idxs] = geo['loadN'] * w / (grid['dd']**2)
-    diagK = K.diagonal()
-    # Only enough to keep a singular K solvable. Anything larger acts as an
-    # elastic foundation whose relative stiffness grows with grid size
-    # (1e-8 read 14% low at GN 180).
-    reg = 1e-12*np.mean(np.abs(diagK))
-    Kreg = (K + sparse.diags(np.full(N + n_aux, reg))).tocsc()
     try:
-        defl = spsolve(Kreg, F)[:N]
+        if grid['bc_mode'] != 'free':
+            # K x = F is (K - sigma*M) x = F - sigma*M x: refine from the
+            # shifted factorization. sigma is under 1e-4 of the lowest mode's
+            # omega^2, so each pass gains about four digits.
+            x = lu_shift.solve(F)
+            for _ in range(3):
+                x = lu_shift.solve(F + sigma*(Mc @ x))
+        else:
+            # A free plate's K is singular (rigid-body motion), so refinement
+            # wouldn't converge. Only enough regularization to keep it
+            # solvable: anything larger acts as an elastic foundation whose
+            # relative stiffness grows with grid size (1e-8 read 14% low at GN 180).
+            reg = 1e-12*np.mean(np.abs(K.diagonal()))
+            x = _factor_sym(K + sparse.diags(np.full(K.shape[0], reg))).solve(F)
+        defl = x[:N]
     except Exception:
         defl = np.zeros(N)
     defl_at_bridge = float(np.dot(w, defl[idxs]) / max(float(np.sum(w)), 1e-12))
@@ -938,18 +1156,27 @@ def _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly):
     added on the curvature rows the footprint covers, weighted by the
     fraction of each row's cell it covers -- so a bridge narrower than the
     grid spacing still counts its true area. Its mass is spread onto the
-    nodes the same way. Returns (K_bridge or None, nodal mass per area, grams)."""
-    N = grid['N']
+    nodes the same way. With plate shear, the block also resists
+    through-thickness shear (G_b*h_b, isotropic) and adds rotary inertia
+    (about the plate's mid-plane), both on the shear links its footprint
+    covers.
+
+    Returns None without a structural bridge, else a dict: 'D' the added
+    (D11, D22, D12, D66) and 'cover' its per-row weighting (bending is
+    assembled by the caller, so it picks up the plate's shear terms too),
+    'm_nodes' nodal mass per area, 'mass_g', 'Gh' = G_b*h_b, 'I' the rotary
+    inertia per area, and 'link_cover' the footprint fraction on each x- and
+    y-link."""
     if not geo.get('bridgeStructural', True):
-        return None, np.zeros(N), 0.0
+        return None
     hb = geo.get('bridgeHeightMm', BRIDGE_DEFAULTS['bridgeHeightMm'])/1000.0
     Eb = float(geo.get('bridgeE', BRIDGE_DEFAULTS['bridgeE'])); rhob = float(geo.get('bridgeRho', BRIDGE_DEFAULTS['bridgeRho']))
     if not (hb > 0 and Eb > 0):
-        return None, np.zeros(N), 0.0
+        return None
     step = 0.001
     PX, PY = _bridge_samples(geo, Lx, Ly, step)
     if PX.size < 2:
-        return None, np.zeros(N), 0.0
+        return None
     dd = grid['dd']; a_each = step*step
     m_nodes = _spread_to_nodes(grid, PX, PY, np.full(PX.size, rhob*hb*a_each)) / (dd*dd)
     mass_g = rhob*hb*a_each*PX.size*1000.0
@@ -961,11 +1188,16 @@ def _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly):
         return Eb*(hb**3/12.0 + hb*(zb-zn)**2) + Ep*h*(zp-zn)**2
     Dx, Dy, nub = d_add(Ex), d_add(Ey), 0.3
     Dxy = math.sqrt(Dx*Dy)
-    S = sparse.diags(cover)
-    Lxx, Lyy, Lxy = grid['Lxx'], grid['Lyy'], grid['Lxy']
-    K = (Dx*(Lxx.T@S@Lxx) + Dy*(Lyy.T@S@Lyy) + nub*Dxy*(Lxx.T@S@Lyy + Lyy.T@S@Lxx)
-         + 2.0*(1.0-nub)*Dxy*(Lxy.T@S@Lxy))
-    return K, m_nodes, mass_g
+    # Fraction of each node's cell the footprint covers, averaged onto links.
+    frac = _spread_to_nodes(grid, PX, PY, np.full(PX.size, a_each)) / (dd*dd)
+    def link_cover(ends):
+        a, b = ends
+        return np.where(b >= 0, 0.5*(frac[a] + frac[np.maximum(b, 0)]), frac[a])
+    zc = (h + hb)/2.0   # block centroid above the plate's mid-plane
+    return {'D': (Dx, Dy, nub*Dxy, 0.5*(1.0-nub)*Dxy), 'cover': sparse.diags(cover),
+            'm_nodes': m_nodes, 'mass_g': mass_g, 'Gh': Eb/(2.0*(1.0 + nub))*hb,
+            'I': rhob*(hb**3/12.0 + hb*zc*zc),
+            'link_cover': (link_cover(grid['Sx_ends']), link_cover(grid['Sy_ends']))}
 
 HIDDEN_MODE_RATIO = 0.5   # unmatched modes at least this strong (vs the weakest matched one) count as "hidden"
 
@@ -1765,6 +1997,129 @@ def _progress(label, it, iters, best_cost, best_result, trace=None):
     BRIDGE['onOptimizerProgress'](label, it, iters, float(best_cost),
                                    json.dumps(freqs), (float(defl) if defl is not None else None))
 
+# ── Grid-convergence correction for the polish ───────────────────────────
+# The polish grid (hifiGN, ~50-90) is coarse enough to be searched hundreds
+# of times, which leaves its modes a few percent off the converged answer
+# (the answer a 3D FEA model agrees with). The error isn't one-sided: the
+# bilinear spreading of each brace onto the plate nodes and the staircase
+# edge both depend on where the braces fall on the grid, so one design's
+# modes all rise with refinement (2-7% from GN 60 to 160 on a five-brace
+# experimental top) while an x-brace's fall (2-6%), and the higher modes
+# move most.
+#
+# Rather than polish on the fine grid (each solve there is 10-50x slower),
+# the coarse winner is solved ONCE on both grids. For target i the ratio
+#     k_i = f_fine,i / f_polish,i
+# is how far that mode moves from the polish grid to the fine one. The
+# polish then aims at f_target,i / k_i (and tolerance / k_i) on the cheap
+# grid, so that the same design lands on f_target,i once it is re-solved on
+# the fine grid for the card. The bridge deflection limit gets the same
+# treatment with the deflection ratio. k_i depends on the design and drifts
+# as the polish changes it (a few percent can remain on single modes); the
+# fine re-solve at the end reports that residual.
+#
+# Modes are followed between grids by shape (MAC on the common display
+# field), not re-paired by strength: two weak modes can trade places in
+# strength between grids, which would pair a target with a different mode,
+# give a meaningless ratio, and report a mode the polish never tuned.
+GRID_FACTOR_BOUNDS = (0.8, 1.25)
+# The fine grid is capped: the Mindlin plate carries about three unknowns per
+# node, so GN 200 is ~70k unknowns and a ~2 GB factorization per pattern
+# process, and GN 300 (~155k) runs out of memory with patterns in parallel.
+MAX_FINE_GN = 200
+GRID_TRACK_MAC = 0.5
+
+def _track_modes(r_lo, r_hi, n_targets):
+    """For each target slot i: (j_lo, j_hi), indices into r_lo['modes'] and
+    r_hi['modes'] (both solved with want_field) of target i's mode on each
+    grid. j_hi is None when no fine-grid mode matches it by shape (MAC >
+    GRID_TRACK_MAC) with a frequency ratio inside GRID_FACTOR_BOUNDS.
+    Each fine-grid mode goes to at most one slot."""
+    lo_modes, hi_modes = r_lo.get('modes') or [], r_hi.get('modes') or []
+    lo_shapes, hi_shapes = r_lo.get('fieldShapes') or [], r_hi.get('fieldShapes') or []
+    lo_f = r_lo.get('freqs') or []
+    js, cands = [], []
+    for i in range(n_targets):
+        j = next((n for n, m in enumerate(lo_modes) if m.get('target') == i), None)
+        f_i = lo_f[i] if i < len(lo_f) else None
+        if j is None and f_i and lo_modes:   # no target tags: the mode reported for slot i
+            j = int(np.argmin([abs(m['freq'] - f_i) for m in lo_modes]))
+        js.append(j)
+        if j is None or j >= len(lo_shapes) or not (lo_modes[j]['freq'] > 0):
+            continue
+        for jh, s in enumerate(hi_shapes):
+            k = hi_modes[jh]['freq'] / lo_modes[j]['freq']
+            if GRID_FACTOR_BOUNDS[0] < k < GRID_FACTOR_BOUNDS[1]:
+                c = mac(lo_shapes[j], s)
+                if c > GRID_TRACK_MAC:
+                    cands.append((c, i, jh))
+    # Greedy one-to-one, best MAC first: a close pair whose shapes mix a
+    # little between grids (MAC ~0.6-0.7 each way) still pairs up correctly
+    # instead of both slots grabbing the same fine-grid mode.
+    hit, used = {}, set()
+    for c, i, jh in sorted(cands, reverse=True):
+        if i not in hit and jh not in used:
+            hit[i] = jh; used.add(jh)
+    return [(js[i], hit.get(i)) for i in range(n_targets)]
+
+def grid_correction(braces, polish_geo, fine_geo, targets, n_modes, meas_xy, defl_limit_mm):
+    """Solve braces on the polish grid and the fine grid and return
+    (polish_targets, polish_defl_limit, info): the targets and deflection
+    limit to search against on the polish grid, and info = {'factors': k_i
+    per target, 'deflFactor', 'hifiGN', 'displayGN'} for the card. A target
+    whose mode can't be followed uses the median of the others. Falls back
+    to the uncorrected targets if either solve fails."""
+    r_lo = evaluate_design(polish_geo, braces, n_modes, meas_xy, want_field=True)
+    r_hi = evaluate_design(fine_geo, braces, n_modes, meas_xy, want_field=True)
+    if not (r_lo.get('ok') and r_hi.get('ok')):
+        return targets, defl_limit_mm, None
+    lo_modes, hi_modes = r_lo['modes'], r_hi['modes']
+    ratios = [hi_modes[jh]['freq']/lo_modes[j]['freq'] if jh is not None else None
+              for j, jh in _track_modes(r_lo, r_hi, len(targets))]
+    good = [k for k in ratios if k]
+    fallback = float(np.median(good)) if good else 1.0
+    ratios = [float(k) if k else fallback for k in ratios]
+    polish_targets = [dict(t, freq=t['freq']/k, tol=t.get('tol', 5.0)/k) for t, k in zip(targets, ratios)]
+    d_lo, d_hi = r_lo.get('deflBridgeMm') or 0.0, r_hi.get('deflBridgeMm') or 0.0
+    d_ratio = min(1.5, max(0.67, d_hi/d_lo)) if d_lo > 1e-9 and d_hi > 0 else 1.0
+    info = {'factors': ratios, 'deflFactor': float(d_ratio),
+            'hifiGN': int(polish_geo['GN']), 'displayGN': int(fine_geo['GN'])}
+    return polish_targets, defl_limit_mm/d_ratio, info
+
+def fine_resolve(braces, polish_geo, fine_geo, n_modes, meas_xy):
+    """The card's re-solve on the fine grid, reporting for each target the
+    fine-grid version of the mode the polish tuned (followed by shape)
+    rather than whatever the fine grid's own strength pairing picks. A slot
+    whose mode can't be followed keeps the strength pairing."""
+    r_hi = evaluate_design(fine_geo, braces, n_modes, meas_xy, want_field=True)
+    if not r_hi.get('ok'):
+        return r_hi
+    r_lo = evaluate_design(polish_geo, braces, n_modes, meas_xy, want_field=True)
+    if not r_lo.get('ok'):
+        return r_hi
+    n = len(r_hi.get('freqs') or [])
+    track = _track_modes(r_lo, r_hi, n)
+    modes, freqs = r_hi['modes'], list(r_hi['freqs'])
+    claimed = {jh for _, jh in track if jh is not None}
+    meas = list(r_hi['measShapes']) if r_hi.get('measShapes') else None
+    # Strength-pairing tags survive only for slots that couldn't be tracked,
+    # and only on modes no tracked slot claims.
+    for n_i, m in enumerate(modes):
+        t = m.get('target')
+        if n_i in claimed or (t is not None and t < n and track[t][1] is not None):
+            m['target'] = None
+    for i, (j, jh) in enumerate(track):
+        if jh is None:
+            continue
+        freqs[i] = modes[jh]['freq']
+        modes[jh]['target'] = i
+        if meas is not None and r_lo.get('measShapes') and i < len(r_lo['measShapes']):
+            meas[i] = r_lo['measShapes'][i]
+    r_hi['freqs'] = freqs
+    if meas is not None:
+        r_hi['measShapes'] = meas
+    return r_hi
+
 async def run_all_patterns(payload_json):
     try:
         CANCEL_FLAG['stop'] = False
@@ -1880,10 +2235,10 @@ async def run_all_patterns(payload_json):
         # reported on rather than just re-measured on it.
         final = {}
         hifi_geo = dict(geo); hifi_geo['GN'] = p.get('hifiGN', 55)
-        display_geo = dict(geo); display_geo['GN'] = p.get('displayGN', 150)
-        # The card reports the polish solve's own modes (what the log prints); the
-        # finer display re-solve is opt-in since it shifts modes the search tuned.
-        use_display_solve = bool(p.get('displayResolve', False)) and display_geo['GN'] > hifi_geo['GN']
+        display_geo = dict(geo); display_geo['GN'] = min(int(p.get('displayGN', 150)), MAX_FINE_GN)
+        # The card reports a re-solve on the fine display grid. The polish aims at
+        # grid-corrected targets (see grid_correction) so that re-solve lands on target.
+        use_display_solve = bool(p.get('displayResolve', True)) and display_geo['GN'] > hifi_geo['GN']
         n_modes = len(targets)
         polish_iters = max(40, min(200, iters//4))
         polish_enabled = p.get('polishEnabled', True)
@@ -1897,6 +2252,15 @@ async def run_all_patterns(payload_json):
                 r = evaluate_design(hifi_geo, braces, n_modes, meas_xy, want_field=True)
                 final[key] = {'braces': braces, 'result': r}
                 continue
+            polish_targets, polish_defl, grid_info = targets, defl_limit_mm, None
+            if polish_enabled and use_display_solve:
+                BRIDGE['onOptimizerLog'](f"[{key}] grid correction: solving the coarse winner at GN {hifi_geo['GN']} and GN {display_geo['GN']} (the GN {display_geo['GN']} solve can take a minute)")
+                await asyncio.sleep(0)
+                polish_targets, polish_defl, grid_info = grid_correction(
+                    braces, hifi_geo, display_geo, targets, n_modes, meas_xy, defl_limit_mm)
+                if grid_info:
+                    BRIDGE['onOptimizerLog'](f"[{key}] grid correction: " + ', '.join(f'{(k-1)*100:+.1f}%' for k in grid_info['factors']) + " per target; polishing toward the shifted targets")
+                await asyncio.sleep(0)
             if not polish_enabled:
                 # Skip straight to the coarse winner as-is, at hi-fi
                 # resolution, with no re-optimization pass -- the final
@@ -1921,7 +2285,7 @@ async def run_all_patterns(payload_json):
                     this_polish_iters, mats = polish_iters, None
                     lockp = custom_lock_positions
                 polished_braces, polished_cost, r = await sa_free_topology(
-                    hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
+                    hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight, cap,
                     this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
                     materials=mats, lock_positions=lockp, **limit_kwargs)
             else:
@@ -1936,20 +2300,18 @@ async def run_all_patterns(payload_json):
                 # not the design being "reset" by design, but a real bug
                 # throwing away a perfectly good starting point.
                 _, polished_cost, r, polished_braces = await sa_continuous(
-                    enc, bounds, hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight,
+                    enc, bounds, hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight,
                     polish_iters, _progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
-            # One more solve at a MUCH higher resolution, purely for the
-            # numbers actually displayed -- a finite-difference plate model
-            # like this converges from above (coarse grids overestimate
-            # stiffness, so frequencies drop as resolution increases,
-            # especially for higher modes with shorter-wavelength shapes
-            # that need more grid points to resolve). Doing this only ONCE
-            # per pattern with the design already decided -- not during
-            # search or polish, where it would run hundreds of times --
-            # means better accuracy costs one extra solve, not a slower
-            # search.
+            # One more solve at a much higher resolution for the numbers
+            # actually displayed. With braces on it this plate converges
+            # from below (modes rise a few percent from the polish grid to
+            # a converged one, the higher modes most), and the polish above
+            # aimed at grid-corrected targets so this solve lands on them.
+            # It runs once per pattern, not per iteration.
             if not CANCEL_FLAG['stop'] and use_display_solve:
-                r_display = evaluate_design(display_geo, polished_braces, n_modes, meas_xy, want_field=True)
+                BRIDGE['onOptimizerLog'](f"[{key}] re-solving the polished design at GN {display_geo['GN']} for the result card")
+                await asyncio.sleep(0)
+                r_display = fine_resolve(polished_braces, hifi_geo, display_geo, n_modes, meas_xy)
                 if r_display.get('ok'):
                     r = r_display
                 await asyncio.sleep(0)
@@ -1969,6 +2331,7 @@ async def run_all_patterns(payload_json):
                     r['fieldNx'] = r_field.get('fieldNx')
                     r['fieldNy'] = r_field.get('fieldNy')
                 await asyncio.sleep(0)
+            r['gridCorrection'] = grid_info
             final[key] = {'braces': polished_braces, 'result': r}
             BRIDGE['onOptimizerProgress'](key, iters, iters, float(polished_cost),
                                            json.dumps(r.get('freqs',[])),
@@ -1992,6 +2355,7 @@ async def run_all_patterns(payload_json):
                 'modes': r.get('modes'), 'hiddenStrong': r.get('hiddenStrong'), 'bridgeMassG': r.get('bridgeMassG'),
                 'torqueResolved': r.get('torqueResolved', True),
                 'torqueRequested': r.get('torqueRequested', False),
+                'gridCorrection': r.get('gridCorrection'),
             }
         BRIDGE['onOptimizerDone'](json.dumps(out), CANCEL_FLAG['stop'])
     except Exception as exc:
@@ -2194,10 +2558,10 @@ async def _solve_pattern_async(key, p, progress_queue=None):
         return None
 
     hifi_geo = dict(geo); hifi_geo['GN'] = p.get('hifiGN', 55)
-    display_geo = dict(geo); display_geo['GN'] = p.get('displayGN', 150)
-    # The card reports the polish solve's own modes (what the log prints); the
-    # finer display re-solve is opt-in since it shifts modes the search tuned.
-    use_display_solve = bool(p.get('displayResolve', False)) and display_geo['GN'] > hifi_geo['GN']
+    display_geo = dict(geo); display_geo['GN'] = min(int(p.get('displayGN', 150)), MAX_FINE_GN)
+    # The card reports a re-solve on the fine display grid. The polish aims at
+    # grid-corrected targets (see grid_correction) so that re-solve lands on target.
+    use_display_solve = bool(p.get('displayResolve', True)) and display_geo['GN'] > hifi_geo['GN']
     n_modes = len(targets)
     polish_iters = max(40, min(200, iters//4))
     polish_enabled = p.get('polishEnabled', True)
@@ -2206,6 +2570,19 @@ async def _solve_pattern_async(key, p, progress_queue=None):
         'fan': (lambda pp, g: fan_encode(pp, fan_n, g), fan_bounds(fan_n)),
         'falcate': (falcate_encode, FALCATE_BOUNDS),
     }
+    def _log(text):
+        if progress_queue is not None:
+            try:
+                progress_queue.put(('__log__', text))
+            except Exception:
+                pass
+    polish_targets, polish_defl, grid_info = targets, defl_limit_mm, None
+    if polish_enabled and use_display_solve and not CANCEL_FLAG['stop']:
+        _log(f"[{key}] grid correction: solving the coarse winner at GN {hifi_geo['GN']} and GN {display_geo['GN']} (the GN {display_geo['GN']} solve can take a minute)")
+        polish_targets, polish_defl, grid_info = grid_correction(
+            braces, hifi_geo, display_geo, targets, n_modes, meas_xy, defl_limit_mm)
+        if grid_info:
+            _log(f"[{key}] grid correction: " + ', '.join(f'{(k-1)*100:+.1f}%' for k in grid_info['factors']) + " per target; polishing toward the shifted targets")
     if CANCEL_FLAG['stop']:
         polished_braces, polished_cost = braces, cost
         r = evaluate_design(hifi_geo, braces, n_modes, meas_xy, want_field=True)
@@ -2227,17 +2604,18 @@ async def _solve_pattern_async(key, p, progress_queue=None):
             this_polish_iters, mats = polish_iters, None
             lockp = custom_lock_positions
         polished_braces, polished_cost, r = await sa_free_topology(
-            hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight, cap,
+            hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight, cap,
             this_polish_iters, _report_progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
             materials=mats, lock_positions=lockp, **limit_kwargs)
     else:
         enc, bounds = ENCODERS[key]
         _, polished_cost, r, polished_braces = await sa_continuous(
-            enc, bounds, hifi_geo, targets, meas_xy, defl_limit_mm, mass_weight,
+            enc, bounds, hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight,
             polish_iters, _report_progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
 
     if not CANCEL_FLAG['stop'] and use_display_solve:
-        r_display = evaluate_design(display_geo, polished_braces, n_modes, meas_xy, want_field=True)
+        _log(f"[{key}] re-solving the polished design at GN {display_geo['GN']} for the result card")
+        r_display = fine_resolve(polished_braces, hifi_geo, display_geo, n_modes, meas_xy)
         if r_display.get('ok'):
             r = r_display
     if not CANCEL_FLAG['stop'] and r.get('ok') and not r.get('fieldShapes'):
@@ -2262,6 +2640,7 @@ async def _solve_pattern_async(key, p, progress_queue=None):
                 'modes': r.get('modes'), 'hiddenStrong': r.get('hiddenStrong'), 'bridgeMassG': r.get('bridgeMassG'),
         'torqueResolved': r.get('torqueResolved', True),
         'torqueRequested': r.get('torqueRequested', False),
+        'gridCorrection': grid_info,
     }
 
 
@@ -2315,6 +2694,8 @@ def run_all_patterns_parallel(payload_json):
         def _dispatch(msg):
             if msg and msg[0] == '__trace__':
                 BRIDGE['onOptimizerTrace'](*msg[1:])
+            elif msg and msg[0] == '__log__':
+                BRIDGE['onOptimizerLog'](msg[1])
             else:
                 BRIDGE['onOptimizerProgress'](*msg)
 
