@@ -1330,6 +1330,12 @@ def clamp01(v): return max(0.02, min(0.98, v))
 # braceModulus/braceDensity so it's actually settable from the UI, without
 # threading it through every encoder's parameter list.
 BRACE_MATERIAL = {'modulus': 9.79e9, 'density': 350.0, 'shear': 0.65e9}
+# Floor (mm) on a brace's width at its tips, overridden per-run from the
+# payload's minTipWidthMm. A tip narrower than the grid spacing (about 5.6mm
+# at GN 90) is suspected of reading too stiff, since the plate strip working
+# with it is wider than the brace itself. The center width shares the floor,
+# because a tip never runs wider than its center.
+BRACE_LIMITS = {'min_tip_width': 1.0}
 # Checked at the top of every search iteration so a run can be stopped
 # mid-way (e.g. the person spots a setup mistake) instead of having to
 # wait out however many iterations are left.
@@ -1352,8 +1358,8 @@ def make_brace(x1,y1,x2,y2,height,width,modulus=None,density=None,curve_cp=None,
     btype = 'curve3' if curve_cp2 else ('curve' if curve_cp else 'straight')
     b = {'type':btype,
          'pts':[{'fx':clamp01(x1),'fy':clamp01(y1)},{'fx':clamp01(x2),'fy':clamp01(y2)}],
-         'width':max(1.5,width), 'height':max(3.0,height), 'modulus':modulus, 'density':density,
-         'widthTip': (max(1.0,width_tip) if width_tip is not None else None),
+         'width':max(1.5,BRACE_LIMITS['min_tip_width'],width), 'height':max(3.0,height), 'modulus':modulus, 'density':density,
+         'widthTip': (max(BRACE_LIMITS['min_tip_width'],width_tip) if width_tip is not None else None),
          'heightTip': (max(2.0,height_tip) if height_tip is not None else None)}
     if shear: b['shear'] = float(shear)
     if curve_cp: b['cp'] = {'fx':clamp01(curve_cp[0]), 'fy':clamp01(curve_cp[1])}
@@ -1730,7 +1736,8 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     # so behavior is unchanged for a body that IS centered at fy=0.5.
     fy_lo = max(0.03, sym_axis - 0.35) if symmetric else 0.15
     fy_hi = max(fy_lo+0.02, sym_axis - 0.03) if symmetric else 0.85
-    min_height, min_width = 4.0, 2.0
+    min_tip = BRACE_LIMITS['min_tip_width']
+    min_height, min_width = 4.0, max(2.0, min_tip)
     max_height = max(min_height, float(max_height))
     max_width = max(min_width, float(max_width))
 
@@ -1826,9 +1833,9 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
     enforce_length_cap(braces)
     for b in braces:
         b['height'] = max(3.0, min(max_height, b['height']))
-        b['width'] = max(1.5, min(max_width, b['width']))
+        b['width'] = max(1.5, min_tip, min(max_width, b['width']))
         if b.get('heightTip') is not None: b['heightTip'] = max(2.0, min(b['height'], b['heightTip']))
-        if b.get('widthTip') is not None: b['widthTip'] = max(1.0, min(b['width'], b['widthTip']))
+        if b.get('widthTip') is not None: b['widthTip'] = max(min_tip, min(b['width'], b['widthTip']))
     n_modes = len(targets)
     def evalb(bl):
         full = expand(bl)
@@ -1892,11 +1899,11 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
             # differently (or not at all).
             b = cand[random.randrange(len(cand))]
             b['height'] = max(3.0, min(max_height, b['height'] + random.uniform(-2.5,2.5)))
-            b['width'] = max(1.5, min(max_width, b['width'] + random.uniform(-1.5,1.5)))
+            b['width'] = max(1.5, min_tip, min(max_width, b['width'] + random.uniform(-1.5,1.5)))
             hTip = b.get('heightTip') if b.get('heightTip') is not None else b['height']
             wTip = b.get('widthTip') if b.get('widthTip') is not None else b['width']
             b['heightTip'] = max(2.0, min(b['height'], hTip + random.uniform(-2.0,2.0)))
-            b['widthTip'] = max(1.0, min(b['width'], wTip + random.uniform(-1.5,1.5)))
+            b['widthTip'] = max(min_tip, min(b['width'], wTip + random.uniform(-1.5,1.5)))
         elif cand:
             # Bend or straighten this brace's centerline. The bow cap is
             # proportional to the brace's own chord length, not a fixed
@@ -2150,6 +2157,7 @@ async def run_all_patterns(payload_json):
         BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 9.79e9))
         BRACE_MATERIAL['density'] = float(p.get('braceDensity', 350.0))
         BRACE_MATERIAL['shear'] = float(p.get('braceShear', 0.65e9))
+        BRACE_LIMITS['min_tip_width'] = max(1.0, float(p.get('minTipWidthMm') or 1.0))
         # Mixed-material search is Experimental only, per an explicit
         # request that plain Novel keep using a single material like every
         # other pattern. Two options for now (spruce, carbon fiber); the
@@ -2496,6 +2504,7 @@ async def _solve_pattern_async(key, p, progress_queue=None):
     BRACE_MATERIAL['modulus'] = float(p.get('braceModulus', 9.79e9))
     BRACE_MATERIAL['density'] = float(p.get('braceDensity', 350.0))
     BRACE_MATERIAL['shear'] = float(p.get('braceShear', 0.65e9))
+    BRACE_LIMITS['min_tip_width'] = max(1.0, float(p.get('minTipWidthMm') or 1.0))
     exp_materials = [
         {'modulus': float(p.get('expMatSpruceE', 9.79e9)), 'density': float(p.get('expMatSpruceRho', 350.0)), 'shear': float(p.get('expMatSpruceG', 0.65e9))},
         {'modulus': float(p.get('expMatCarbonE', 135e9)), 'density': float(p.get('expMatCarbonRho', 1600.0)), 'shear': float(p.get('expMatCarbonG', 5e9))},
