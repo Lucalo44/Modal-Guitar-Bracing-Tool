@@ -498,6 +498,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
         <option value="maple">Maple (E=12.6 GPa, ρ=630)</option>
         <option value="mahogany">Mahogany (E=8.7 GPa, ρ=550)</option>
         <option value="carbon">Carbon-fiber reinforced (E=60 GPa, ρ=700)</option>
+        <option value="acrylic">Acrylic, cast PMMA (E=3.2 GPa, ρ=1185)</option>
         <option value="custom">Custom</option>
       </select>
       <div class="param-row inline"><label>Young's modulus (GPa)</label><input type="number" id="braceE" value="9.79" step="0.01"></div>
@@ -548,6 +549,7 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
           <option value="maple">Maple (E=12.6, ρ=630)</option>
           <option value="mahogany">Mahogany (E=8.7, ρ=550)</option>
           <option value="carbon">Carbon fibre (E=60, ρ=700)</option>
+          <option value="acrylic">Acrylic (E=3.2, ρ=1185)</option>
         </select>
         <div class="param-row"><label>Young's modulus <span id="manualEVal">9.8 GPa</span></label>
           <input type="range" id="manualBraceE" min="1" max="140" step="0.01" value="9.79"></div>
@@ -2619,7 +2621,7 @@ function onManualPropChange(){
   document.getElementById(id).addEventListener('input', onManualPropChange);
 });
 (function(){
-  const presets = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5} };
+  const presets = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5}, acrylic:{E:3.2,rho:1185,G:1.17} };
   document.getElementById('manualMatPreset').onchange = function(){
     const p = presets[this.value]; if(!p) return;
     document.getElementById('manualBraceE').value = p.E;
@@ -3028,8 +3030,9 @@ document.getElementById('genNovelExperimental').onchange = e=>{
 document.getElementById('genCustom').onchange = e=>{
   document.getElementById('customPatternSettings').style.display = e.target.checked ? 'block' : 'none';
 };
-// G: along-grain shear modulus, GPa (wood cut with its grain along the brace).
-const BRACE_MAT_PRESETS = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5} };
+// G: along-grain shear modulus, GPa (wood cut with its grain along the brace;
+// acrylic is isotropic, so its G is just E/2(1+nu) with nu 0.37).
+const BRACE_MAT_PRESETS = { spruce:{E:9.79,rho:350,G:0.65}, maple:{E:12.6,rho:630,G:1.1}, mahogany:{E:8.7,rho:550,G:0.75}, carbon:{E:60,rho:700,G:1.5}, acrylic:{E:3.2,rho:1185,G:1.17} };
 document.getElementById('braceMatPreset').onchange = e=>{
   const p = BRACE_MAT_PRESETS[e.target.value]; if(!p) return;
   document.getElementById('braceE').value = p.E; document.getElementById('braceRho').value = p.rho;
