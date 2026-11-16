@@ -163,6 +163,8 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
 .results-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 @media (max-width: 900px) { .results-grid { grid-template-columns: 1fr; } }
 .pattern-card { background: var(--bg3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 3px 10px rgba(40,90,80,.12); }
+.pattern-card.handdrawn { border-color: #9b7fc9; border-width: 2px; }
+.results-section-hdr { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text2, #4d6b64); text-transform: uppercase; letter-spacing: .04em; margin: 4px 2px -4px; }
 .pattern-card.best { border-color: var(--gold); border-width: 2px; box-shadow: 0 0 0 1px var(--gold) inset, 0 3px 12px rgba(224,168,60,.35); }
 .pattern-card-hdr { padding: 10px 12px; border-bottom: 1px solid var(--border2); display: flex; align-items: center; justify-content: space-between; background: linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,.15)); }
 .pattern-card-hdr h3 { font-family: var(--wood); font-size: 13px; font-weight: 700; color: var(--text); }
@@ -345,8 +347,8 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       <div class="param-row inline"><label>Along-grain modulus Eₗ (GPa)</label><input type="number" id="geoE" value="9.79" step="0.01"></div>
       <div class="param-row inline"><label>Across-grain modulus Eᵣ (GPa)</label><input type="number" id="geoEy" value="1.25" step="0.01"></div>
       <div class="param-row inline"><label>In-plane shear modulus G_LR (GPa)</label><input type="number" id="geoGxy" value="1.21" step="0.01"></div>
-      <div class="param-row inline"><label>Through-thickness shear G_LT (GPa)</label><input type="number" id="geoGxz" value="0.6" step="0.01" min="0.001"></div>
-      <div class="param-row inline"><label>Rolling shear G_RT (GPa)</label><input type="number" id="geoGyz" value="0.04" step="0.005" min="0.001"></div>
+      <div class="param-row inline"><label>Through-thickness shear G_LT (GPa)</label><input type="number" id="geoGxz" value="1.17" step="0.01" min="0.001"></div>
+      <div class="param-row inline"><label>Rolling shear G_RT (GPa)</label><input type="number" id="geoGyz" value="0.1" step="0.005" min="0.001"></div>
       <div class="param-row inline"><label>Poisson's ratio ν_LR</label><input type="number" id="geoNu" value="0.422" step="0.001"></div>
       <div class="param-row inline"><label>Density ρ (kg/m³)</label><input type="number" id="geoRho" value="350"></div>
       <div class="check-row"><input type="checkbox" id="geoPlateShear" checked><label style="margin:0">Include through-thickness shear</label></div>
@@ -601,6 +603,9 @@ canvas.plot { display: block; width: 100%; background: #f6fcfb; border: 1px soli
       </div>
       <div class="sbar-section">
         <button class="btn danger" id="manualClearBtn">✕ Clear all braces</button>
+        <div class="sbar-hint" id="manualSourceNote" style="display:none; margin-top:8px"></div>
+        <div class="param-row inline" style="margin-top:8px"><label>Solve resolution (GN) <span class="grid-mm" id="manualGNmm"></span></label><input type="number" id="manualGN" value="150" min="50" max="200"></div>
+        <div class="sbar-hint">One solve of exactly these braces at this grid; nothing is optimised. Raise it (up to 200) to check grid convergence or compare with ANSYS.</div>
         <button class="btn primary" id="manualEvaluateBtn" style="margin-top:8px">▶ Evaluate this design</button>
         <button class="btn" id="manualSendToOptimizerBtn" style="margin-top:6px">🔍 Send to optimizer to refine…</button>
         <div class="sbar-hint">"Send to optimizer" loads exactly what's drawn here into the Custom pattern. After doing so, switch to Auto-generate, leave only Custom checked, and hit "Generate &amp; compare" so the search improves the design rather than just evaluating it.</div>
@@ -680,7 +685,7 @@ const GEO = {
   outlinePts: [], holeCx:0.382, holeCy:0.5, holeR:0.1332, bridge:{fx:0.63, fy:0.5},
   bridgePts: [], bridgeClosed: true, bridgeLenMm:155, bridgeDepthMm:28,
   bridgeStructural:true, bridgeHeightMm:9, bridgeE:12e9, bridgeRho:850,
-  Lx:0.508, Ly:0.394, h:0.0028, E:9.79e9, Ey:1.25e9, Gxy:1.21e9, Gxz:0.6e9, Gyz:0.04e9, plateShear:true, rho:350, nu:0.422, bcMode:'clamped', braceShearModel:'iso',
+  Lx:0.508, Ly:0.394, h:0.0028, E:9.79e9, Ey:1.25e9, Gxy:1.21e9, Gxz:1.17e9, Gyz:0.1e9, plateShear:true, rho:350, nu:0.422, bcMode:'clamped', braceShearModel:'iso',
   loadN:300, bridgeTorqueNmm:10000, deflLimitMm:2, traceMode:'outline', bgImage:null,
   solverVersion:'v2', braceFootprint:true, flangeCap:false, braceFlangeWidth:40, pointMasses:[], pointMassesText:''
 };
@@ -814,7 +819,7 @@ document.getElementById('helpBtn').onclick = ()=>{
   D₁₂ from the major Poisson's ratio (ν_LR). The minor ratio ν_RL is always derived from reciprocity
   (ν_LR/Eₗ = ν_RL/Eᵣ) rather than set on its own, which keeps the material physically consistent. <b>Grain is assumed
   to run along the plate's length</b>, so a traced body that's rotated relative to its true grain direction isn't
-  accounted for. The default spruce (Eₗ 9.79, Eᵣ 1.25, G_LR 1.21 GPa, ν_LR 0.422, ρ 350 kg/m³) matches the spruce in the
+  accounted for. The default spruce (Eₗ 9.79, Eᵣ 1.25, G_LR 1.21, G_LT 1.17, G_RT 0.1 GPa, ν_LR 0.422, ρ 350 kg/m³) matches the spruce in the
   ANSYS model the solver is validated against, and the cedar preset uses ratios commonly cited in the literature
   (Eᵣ/Eₗ ≈ 1/15, G_LR/Eₗ ≈ 1/16). Both are reasonable starting points; choose Custom to enter measured values for your
   own wood. "Isotropic" is a legacy option that uses one modulus in every direction.</p>
@@ -828,9 +833,9 @@ document.getElementById('helpBtn').onclick = ()=>{
   default), which is closer to real wood with the grain running along the brace.</p>
   <p><b>Through-thickness shear:</b> with "Include through-thickness shear" checked (the default), the top is a
   Reissner-Mindlin plate instead of a thin (Kirchhoff) plate. Its cross-sections shear through the thickness as well as bend.
-  G_LT resists that shear along the grain. G_RT, wood's rolling shear, resists it across the grain. G_RT is tiny: about
-  0.04GPa for spruce, roughly 1/250 of Eₗ. Short cross-grain bends are therefore softer than thin-plate theory predicts. On a
-  2.8mm spruce top, a bend with a 150mm wavelength loses about 3% in frequency, and one at 40mm loses over 20%. Whole-body
+  G_LT resists that shear along the grain. G_RT, wood's rolling shear, resists it across the grain. G_RT is tiny: 0.1GPa in the default
+  spruce, roughly 1/100 of Eₗ (Wood Handbook ratios give as little as 0.04GPa). Short cross-grain bends are therefore softer than thin-plate theory predicts. On a
+  2.8mm spruce top with G_RT 0.04GPa, a bend with a 150mm wavelength loses about 3% in frequency, and one at 40mm loses over 20%. Whole-body
   modes barely move. Modes that concentrate between closely spaced braces can drop several percent. Rotary inertia of the
   plate and the bridge block is included too. Solves take 2–8× longer with shear on, with the larger factor at finer grids.
   Unchecking it gives the thin plate back exactly.</p>
@@ -863,7 +868,7 @@ document.getElementById('helpBtn').onclick = ()=>{
   torque. The search treats it as a hard constraint (see Step 3), and every result reports its deflection against it.</p>
   <p><b>What's actually reachable:</b> bracing only ever <i>adds</i> mass and stiffness to a top. For realistic brace
   sizes, stiffening wins, so a mode is easy to push up but very hard to push below what the bare, unbraced plate already
-  does. "Compute bare-plate reference" solves the unbraced top and lists its modes. In the Targets tab, any target below
+  does. "Compute bare-plate reference" solves the top alone, with no braces and no bridge, and lists its modes. In the Targets tab, any target below
   the matching bare-plate mode is flagged "below bare," since it asks bracing to lower that mode, which usually isn't
   achievable by adding material.</p>
 
@@ -1871,9 +1876,10 @@ const MAT_PRESETS = {
   // Spruce matches the orthotropic spruce in the ANSYS model the solver
   // is validated against. Cedar uses the along/across-grain ratios common
   // in guitar acoustics literature (E_R/E_L ~ 1/15, G_LR/E_L ~ 1/16).
-  // Through-thickness G_LT and rolling shear G_RT follow the Wood Handbook
-  // ratios (G_LT/E_L ~ 0.06 spruce, 0.086 cedar; G_RT ~ 0.04 GPa for both).
-  spruce:    {E:9.79, Ey:1.25, Gxy:1.21, Gxz:0.6,  Gyz:0.04, nu:0.422, rho:350},
+  // Spruce G_LT 1.17 / G_RT 0.1 GPa are the published values in that ANSYS
+  // material (the bare top matches it within 0.4%). Cedar G_LT and G_RT follow
+  // Wood Handbook ratios (G_LT/E_L ~ 0.086, G_RT ~ 0.04 GPa).
+  spruce:    {E:9.79, Ey:1.25, Gxy:1.21, Gxz:1.17, Gyz:0.1,  nu:0.422, rho:350},
   cedar:     {E:8,   Ey:0.53, Gxy:0.50, Gxz:0.69, Gyz:0.04, nu:0.37},
   isotropic: {E:11,  Ey:11,   Gxy:11/(2*(1+0.30)), Gxz:11/(2*(1+0.30)), Gyz:11/(2*(1+0.30)), nu:0.30},
 };
@@ -1966,13 +1972,13 @@ function gridSpacingMm(GN){
   return Math.max(ex, ey)/(GN-1)*1000;
 }
 function updateGridSpacingLabels(){
-  [['optGN','optGNmm'], ['finalDisplayGN','finalDisplayGNmm']].forEach(([inp, lab])=>{
+  [['optGN','optGNmm'], ['finalDisplayGN','finalDisplayGNmm'], ['manualGN','manualGNmm']].forEach(([inp, lab])=>{
     const el = document.getElementById(lab); if(!el) return;
     const dd = gridSpacingMm(document.getElementById(inp).value);
     el.textContent = dd ? `(${dd.toFixed(2)} mm cells)` : '';
   });
 }
-['optGN','finalDisplayGN'].forEach(id=> document.getElementById(id).addEventListener('input', updateGridSpacingLabels));
+['optGN','finalDisplayGN','manualGN'].forEach(id=> document.getElementById(id).addEventListener('input', updateGridSpacingLabels));
 updateGridSpacingLabels();
 document.getElementById('loadN').oninput = e=> GEO.loadN = +e.target.value;
 document.getElementById('bridgeTorque').oninput = e=> GEO.bridgeTorqueNmm = +e.target.value;
@@ -2382,7 +2388,7 @@ window.onBareModesResult = (jsonStr)=>{
     box.style.display='none'; GEO.bareFreqs = null; return;
   }
   GEO.bareFreqs = r.freqs;
-  logStatus(document.getElementById('bareModesStatus'), `Computed ${r.freqs.length} bare-plate mode(s).`, 'ok');
+  logStatus(document.getElementById('bareModesStatus'), `Computed ${r.freqs.length} bare-plate mode(s) (no braces, no bridge).`, 'ok');
   box.style.display='block';
   box.innerHTML = `<table class="data-table"><thead><tr><th>Mode</th><th>Bare freq (Hz)</th></tr></thead><tbody>` +
     r.freqs.map((f,i)=>`<tr><td>${i+1}</td><td>${f.toFixed(1)}</td></tr>`).join('') +
@@ -2397,7 +2403,9 @@ document.getElementById('checkBareModesBtn').onclick = ()=>{
   if(!pyEngineReady){ logStatus(document.getElementById('bareModesStatus'), 'Engine still loading — try again in a moment.', 'warn'); return; }
   if(GEO.outlinePts.length < 6){ logStatus(document.getElementById('bareModesStatus'), 'Trace or select a plate outline first (need 6+ points).', 'err'); return; }
   logStatus(document.getElementById('bareModesStatus'), 'Solving…', 'warn');
-  engineCall('compute_bare_modes', JSON.stringify(buildGeoPayload(Math.max(40, +document.getElementById('optGN').value+15 || 50))));
+  // Bare plate only: no braces and no bridge (bridge mass and stiffness off).
+  const bareGeo = { ...buildGeoPayload(Math.max(40, +document.getElementById('optGN').value+15 || 50)), bridgePts: [], bridgeStructural: false };
+  engineCall('compute_bare_modes', JSON.stringify(bareGeo));
 };
 
 // Plain status lines from the engine (the fine-grid steps after a search,
@@ -2981,11 +2989,13 @@ document.getElementById('manualDeleteBraceBtn').onclick = ()=>{
 };
 document.getElementById('manualClearBtn').onclick = ()=>{
   MANUAL.braces = []; MANUAL.selectedId=null;
+  setManualSource(null);
   updateManualPropHeader(); updateManualBraceList(); drawBraceCanvas();
 };
 
 function drawBraceCanvas(){
   const cvs = document.getElementById('braceCanvas'); if(!cvs) return;
+  if(!cvs.clientWidth || !cvs.clientHeight) return;   // hidden (auto mode): a 1px canvas gives a negative draw size and arc() throws
   fitCanvasToContainer(cvs);
   const ctx = cvs.getContext('2d');
   const W=cvs.width,H=cvs.height;
@@ -3208,8 +3218,10 @@ document.getElementById('manualEvaluateBtn').onclick = ()=>{
   const statusEl = document.getElementById('manualEvalStatus');
   if(!MANUAL.braces.length){ statusEl.textContent='Draw at least one brace first.'; statusEl.className='status err'; return; }
   if(GEO.outlinePts.length<3){ statusEl.textContent='Trace a plate outline in Setup first.'; statusEl.className='status err'; return; }
-  statusEl.textContent = 'Solving…'; statusEl.className='status';
-  const GN = Math.min(200, +document.getElementById('finalDisplayGN').value || 150);
+  const GN = Math.max(20, Math.min(200, Math.round(+document.getElementById('manualGN').value || 150)));
+  document.getElementById('manualGN').value = GN;
+  statusEl.textContent = `Solving at GN ${GN}…`; statusEl.className='status';
+  MANUAL.pendingGN = GN;
   const geo = buildGeoPayload(GN);
   const targets = buildTargetsPayload();
   const {measX,measY} = buildMeasXY();
@@ -3222,16 +3234,32 @@ document.getElementById('manualEvaluateBtn').onclick = ()=>{
 };
 window.onManualEvalDone = (jsonStr)=>{
   const r = JSON.parse(jsonStr);
+  r.manualGN = MANUAL.pendingGN || null;
+  r.manualFrom = MANUAL.sourceLabel || null;
+  // Carry the ANSYS modes loaded on the source card (or the previous
+  // hand-drawn solve) over, so a re-solve compares without reloading files.
+  const prev = ANSYS_CMP[MANUAL.sourceKey] || ANSYS_CMP['manual'];
+  const carried = prev ? prev.rows.filter(q=> q.nodes && q.nodes.length) : [];
   GEN.results['manual'] = r;
-  if(!PATTERN_META['manual']) PATTERN_META['manual'] = { label:'Hand-drawn', color:'#9b7fc9' };
+  PATTERN_META['manual'] = { label:'Hand-drawn', color:'#9b7fc9' };
+  if(carried.length){
+    const st = ansysState('manual');
+    st.rows = carried.map(q=> ({ ...q, id: st.nextId++, mac: null }));
+    st.open = true;
+  }
   const statusEl = document.getElementById('manualEvalStatus');
   if(r.ok){
-    statusEl.textContent = `Done — ${(r.modes||r.freqs).length} modes found${r.massG!=null?', '+r.massG.toFixed(1)+' g':''}. See Results.`;
+    statusEl.textContent = `Done at GN ${r.manualGN} — ${(r.modes||r.freqs).length} modes${r.massG!=null?', '+r.massG.toFixed(1)+' g':''}. Shown at the top of Results.`;
     statusEl.className='status ok';
+    goToPanel('panelResults');
+    requestAnimationFrame(()=>{
+      const c = document.querySelector('#resultsGrid .pattern-card.handdrawn');
+      if(c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   } else {
     statusEl.textContent = 'Solve failed — check the outline and braces.'; statusEl.className='status err';
+    renderResults();
   }
-  renderResults();
 };
 window.onManualEvalError = (msg)=>{
   const statusEl = document.getElementById('manualEvalStatus');
@@ -3415,8 +3443,10 @@ function renderResults(){
   let scores, sortedKeys, bestKey, targets;
   try{
     scores = {}; keys.forEach(k=> scores[k]=scorePattern(GEN.results[k]));
-    sortedKeys = [...keys].sort((a,b)=> scores[a]-scores[b]); // best (lowest) first, grid flows left-to-right/top-to-bottom
-    bestKey = sortedKeys[0];
+    // Hand-drawn solve sits in its own section on top and is not ranked.
+    const ranked = keys.filter(k=> k !== 'manual').sort((a,b)=> scores[a]-scores[b]); // best (lowest) first
+    sortedKeys = (keys.includes('manual') ? ['manual'] : []).concat(ranked);
+    bestKey = ranked[0];
     targets = buildTargetsPayload();
   } catch(err){
     // Something upstream of any individual card is broken (e.g. a
@@ -3432,11 +3462,18 @@ function renderResults(){
       const res = GEN.results[key];
       const meta = PATTERN_META[key] || {label:key, color:'#2f9fd6'};
       const card = document.createElement('div');
-      card.className = 'pattern-card' + (key===bestKey ? ' best' : '');
+      card.className = 'pattern-card' + (key===bestKey ? ' best' : '') + (key==='manual' ? ' handdrawn' : '');
+      if(sortedKeys.includes('manual') && (key === 'manual' || key === sortedKeys[1])){
+        const h = document.createElement('div'); h.className = 'results-section-hdr';
+        h.textContent = key === 'manual' ? 'Hand-drawn solve (step 3, not ranked)' : 'Generated patterns';
+        grid.appendChild(h);
+      }
+      const manualNote = key === 'manual' ? `<div class="tag-note" style="margin-bottom:6px">Single solve at GN ${res.manualGN ?? '?'}${res.manualGN && gridSpacingMm(res.manualGN) ? ` (${gridSpacingMm(res.manualGN).toFixed(2)} mm cells)` : ''}${res.manualFrom ? `, braces from ${escHtml(res.manualFrom)}` : ', hand-drawn braces'}. Replaced each time you evaluate in step 3.</div>` : '';
       const deflOk = res.ok && res.deflBridgeMm <= GEO.deflLimitMm;
       card.innerHTML = `
         <div class="pattern-card-hdr"><h3>${meta.label}${key===bestKey?' 🏆':''}</h3><span class="pill">${res.ok? (res.braces?res.braces.length:0)+' brace(s)' : 'failed'}</span></div>
         <div class="pattern-card-body">
+          ${manualNote}
           <div class="pattern-canvas-wrap"><canvas width="380" height="380" id="rescanvas_${key}" style="width:100%; height:380px; display:block;"></canvas></div>
           <div style="margin-top:8px">
             ${targets.map((t,i)=>{
@@ -3501,7 +3538,7 @@ function renderResults(){
           ${res.ok && res.fieldShapes && res.fieldShapes.length ? `
           <details class="ansys-cmp" data-ansyskey="${key}">
             <summary>Compare with ANSYS</summary>
-            <div class="sbar-hint">Add one exported ANSYS deformation result per mode (Mechanical: right-click the result → Export → Text File; tab or comma separated, with X/Y location columns). Each mode is paired with this design's modes by MAC. Directional Deformation (Z) works best; an unsigned Total Deformation is compared against |w|. All of this stays on this computer.</div>
+            <div class="sbar-hint">An ANSYS export holds one mode, so add one file per mode; you can pick several files at once and they fill rows in file-name order (a name like mode3_349.2Hz.txt also fills the Hz box). Mechanical: right-click the result → Export → Export Text File, with node locations on. Each mode is paired with this design's modes by MAC. Directional Deformation (Z) works best; an unsigned Total Deformation is compared against |w|. Unscoped exports are cut down to the plate face automatically. All of this stays on this computer.</div>
             <div data-ansysrows></div>
             <button class="btn" data-ansysadd style="margin-top:4px">+ Add ANSYS mode</button>
             <div data-ansysout style="margin-top:6px"></div>
@@ -3548,6 +3585,19 @@ function renderResults(){
   });
 }
 
+/* Which result the hand editor's braces were loaded from (null = drawn
+   or imported). Shown above Evaluate and on the hand-drawn result card. */
+function setManualSource(key){
+  const res = key ? GEN.results[key] : null;
+  MANUAL.sourceKey = key || null;
+  MANUAL.sourceLabel = key ? (key === 'manual' ? 'the previous hand-drawn solve' : (PATTERN_META[key]||{label:key}).label) : null;
+  const note = document.getElementById('manualSourceNote'); if(!note) return;
+  if(!key){ note.style.display = 'none'; return; }
+  const gn = res && res.gridCorrection && res.gridCorrection.displayGN;
+  note.style.display = 'block';
+  note.textContent = `Braces loaded from ${MANUAL.sourceLabel}${gn ? ` (shown at GN ${gn})` : ''}. Set the resolution below and evaluate; the result appears at the top of Results as "Hand-drawn", with any ANSYS modes carried over.`;
+}
+
 /* Takes a solved result's braces and loads them into the hand-draw
    editor for further tuning -- the merged-tool replacement for the old
    "Open in Visualizer" cross-tool handoff. Since generated and hand-drawn
@@ -3563,10 +3613,14 @@ function sendResultToHandEditor(key){
     height: b.height, heightTip: b.heightTip ?? b.height,
     width: b.width, widthTip: b.widthTip ?? b.width,
     modulus: b.modulus, density: b.density,
+    ...(b.shear ? { shear: b.shear } : {}),
   }));
   MANUAL.selectedId = null;
+  setManualSource(key);
+  const gnIn = document.getElementById('manualGN');
+  gnIn.value = Math.max(+gnIn.value || 0, Math.min(200, +document.getElementById('finalDisplayGN').value || 150));
+  genModeSet('manual');   // before goToPanel, so the brace canvas is visible when it draws
   goToPanel('panelGen');
-  genModeSet('manual');
   const statusEl = document.getElementById('manualEvalStatus');
   statusEl.textContent = `Loaded ${MANUAL.braces.length} brace(s) from "${(PATTERN_META[key]||{label:key}).label}" — tweak and re-evaluate, or keep drawing.`;
   statusEl.className = 'status ok';
@@ -4761,7 +4815,7 @@ function ansysState(key){
   if(!st || st.res !== res) st = ANSYS_CMP[key] = { res, rows: [], nextId: 1, open: false };
   return st;
 }
-function ansysNewRow(st){ return { id: st.nextId++, name: '', nodes: [], unsigned: false, units: '', ansysHz: null, measHz: null, err: null, mac: null }; }
+function ansysNewRow(st){ return { id: st.nextId++, name: '', nodes: [], unsigned: false, units: '', faceNote: '', ansysHz: null, measHz: null, err: null, mac: null }; }
 // ANSYS Mechanical "Export" text: header row then numeric rows, tab or comma
 // separated. X/Y location columns found by header; the deformation is the
 // last numeric column. "(m)" in the X header means metres -> mm.
@@ -4798,7 +4852,8 @@ function parseAnsysExport(text){
   for(let k = first; k < lines.length; k++){
     const c = split(lines[k]);
     const x = +c[ix], y = +c[iy], w = +c[idef];
-    if(isFinite(x) && isFinite(y) && isFinite(w) && c[ix] !== '' && c[idef] !== '') raw.push([x, y, w]);
+    const z = iz >= 0 ? +c[iz] : NaN;
+    if(isFinite(x) && isFinite(y) && isFinite(w) && c[ix] !== '' && c[idef] !== '') raw.push([x, y, w, z]);
   }
   if(!raw.length) throw new Error('no usable rows');
   const hx = header[ix] || '';
@@ -4809,13 +4864,32 @@ function parseAnsysExport(text){
     const maxAbs = raw.reduce((m,r)=> Math.max(m, Math.abs(r[0]), Math.abs(r[1])), 0);
     scale = maxAbs < 5 ? 1000 : 1; units = (scale === 1000 ? 'm' : 'mm') + ' (guessed)';
   }
+  // Unscoped exports carry every body (braces, bridge, plate layers). The
+  // plate faces are the Z planes holding the most nodes; braces and bridge
+  // spread over many Z levels. Keep the single most-populated plane.
+  let pts = raw, faceNote = '';
+  const zs = raw.map(r=> r[3]).filter(isFinite);
+  if(zs.length === raw.length){
+    let zmin = Infinity, zmax = -Infinity;
+    zs.forEach(z=>{ if(z < zmin) zmin = z; if(z > zmax) zmax = z; });
+    if((zmax - zmin)*scale > 0.5){
+      const bins = new Map();
+      raw.forEach(r=>{ const b = Math.round(r[3]*scale/0.02); bins.set(b, (bins.get(b)||0) + 1); });
+      let best = null, bestN = 0;
+      bins.forEach((n, b)=>{ if(n > bestN){ bestN = n; best = b; } });
+      if(bestN >= 200 && bestN >= 0.1*raw.length){
+        pts = raw.filter(r=> Math.round(r[3]*scale/0.02) === best);
+        faceNote = `plate face z = ${(best*0.02).toFixed(2)} mm, ${pts.length.toLocaleString()} of ${raw.length.toLocaleString()} nodes`;
+      }
+    }
+  }
   const LxMm = GEO.Lx*1000, LyMm = GEO.Ly*1000, nodes = [];
-  raw.forEach(([x, y, w])=>{
+  pts.forEach(([x, y, w])=>{
     const fx = x*scale/LxMm, fy = y*scale/LyMm;
     if(fx >= 0.02 && fx <= 0.98 && fy >= 0.02 && fy <= 0.98) nodes.push({ fx, fy, w });
   });
   if(nodes.length < 10) throw new Error(`only ${nodes.length} nodes fall on the plate; check the units and that the model uses this tool's frame (x along the length, origin at the outline's bounding-box corner)`);
-  return { nodes, unsigned: nodes.every(n=> n.w >= 0), units };
+  return { nodes, unsigned: nodes.every(n=> n.w >= 0), units, faceNote };
 }
 function initAnsysCompare(el){
   const key = el.dataset.ansyskey, st = ansysState(key);
@@ -4829,8 +4903,8 @@ function renderAnsysRows(el, key){
   const st = ansysState(key), wrap = el.querySelector('[data-ansysrows]');
   wrap.innerHTML = st.rows.map((r,i)=> `<div class="ansys-row" data-rowid="${r.id}">
       <b style="color:var(--text)">ANSYS #${i+1}</b>
-      <input type="file" accept=".csv,.txt,.tsv,.xls,text/plain,text/csv" data-ansysfile>
-      <span>${r.err ? `<span style="color:var(--danger)">⚠ ${escHtml(r.err)}</span>` : (r.name ? `${escHtml(r.name)} · ${r.nodes.length.toLocaleString()} nodes · ${escHtml(r.units)}${r.unsigned ? ' · unsigned' : ''}` : 'no file')}</span>
+      <input type="file" multiple accept=".csv,.txt,.tsv,.xls,text/plain,text/csv" data-ansysfile title="Pick one file, or several at once (one per mode, ordered by file name)">
+      <span>${r.err ? `<span style="color:var(--danger)">⚠ ${escHtml(r.err)}</span>` : (r.name ? `${escHtml(r.name)} · ${r.nodes.length.toLocaleString()} nodes · ${escHtml(r.units)}${r.unsigned ? ' · unsigned' : ''}${r.faceNote ? ` · <span title="Unscoped export: only nodes on the most-populated Z plane (the plate face) are used">${escHtml(r.faceNote)}</span>` : ''}` : 'no file')}</span>
       <span>ANSYS Hz <input type="number" step="0.1" min="0" data-ansyshz value="${r.ansysHz ?? ''}"></span>
       <span>measured Hz <input type="number" step="0.1" min="0" data-ansysmeas value="${r.measHz ?? ''}" placeholder="optional"></span>
       <button class="btn" data-ansysdel title="Remove this mode" style="display:inline-block; width:auto; padding:2px 9px; margin:0">✕</button>
@@ -4838,11 +4912,24 @@ function renderAnsysRows(el, key){
   wrap.querySelectorAll('.ansys-row').forEach(rowEl=>{
     const r = st.rows.find(q=> q.id === +rowEl.dataset.rowid); if(!r) return;
     rowEl.querySelector('[data-ansysfile]').onchange = async e=>{
-      const file = e.target.files[0]; if(!file) return;
-      try{
-        const parsed = parseAnsysExport(await file.text());
-        Object.assign(r, { name: file.name, nodes: parsed.nodes, unsigned: parsed.unsigned, units: parsed.units, err: null, mac: null });
-      } catch(err){ Object.assign(r, { name: '', nodes: [], err: `${file.name}: ${err.message}`, mac: null }); }
+      const files = [...e.target.files].sort((a, b)=> a.name.localeCompare(b.name, undefined, { numeric: true }));
+      if(!files.length) return;
+      // First file fills this row; any others get new rows right after it.
+      const targets = [r];
+      for(let k = 1; k < files.length; k++){
+        const nr = ansysNewRow(st);
+        st.rows.splice(st.rows.indexOf(targets[k-1]) + 1, 0, nr);
+        targets.push(nr);
+      }
+      for(let k = 0; k < files.length; k++){
+        const file = files[k], t = targets[k];
+        try{
+          const parsed = parseAnsysExport(await file.text());
+          Object.assign(t, { name: file.name, nodes: parsed.nodes, unsigned: parsed.unsigned, units: parsed.units, faceNote: parsed.faceNote, err: null, mac: null });
+          const hz = file.name.match(/(\d+(?:\.\d+)?)\s*hz/i); // "mode3_349.2Hz.txt" fills the Hz box
+          if(hz && t.ansysHz == null) t.ansysHz = +hz[1];
+        } catch(err){ Object.assign(t, { name: '', nodes: [], faceNote: '', err: `${file.name}: ${err.message}`, mac: null }); }
+      }
       renderAnsysRows(el, key);
     };
     const num = v=> (String(v).trim() === '' || !isFinite(+v)) ? null : +v;
