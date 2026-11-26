@@ -1,0 +1,3 @@
+# Validation suite only (tests/); the engine itself still needs just numpy and scipy.
+pytest
+scikit-fem

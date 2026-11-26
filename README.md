@@ -13,7 +13,7 @@ It comes in two flavors that share the exact same interface and physics:
 
 This tool started life as two separate programs, which still live in [legacy/](legacy/): a designer for setting up targets, and a visualizer for drawing braces and seeing what they did. Keeping two tools in sync quickly became more trouble than it was worth, so I merged them into one, which is where the "Design & Draw, One Tool" tagline comes from. With this set, a design that comes out of the search and a design drawn by hand are literally the same object, solved by the same engine, so you can pass designs back and forth between the two freely.
 
-In order to keep the browser version install-free, the whole thing lives in a single file, [index.html](index.html): the HTML and CSS, the JavaScript interface, a Three.js 3D viewer, and the entire Python physics engine, which runs in the page through [Pyodide](https://pyodide.org/) (Python compiled to WebAssembly). This was wonderfully convenient right up until it wasn't. Pyodide runs on the page's single main thread, so every pattern in a "Generate & compare" run had to solve one after another, even though none of them depend on each other. Early on, the search also only handed control back to the browser on progress updates, which meant the entire page froze while it ran. This was not a major success. The fix for the freezing was to yield back to the browser on every single iteration, but the one-thread ceiling is structural, and no amount of clever yielding gets around it.
+In order to keep the browser version install-free, the whole thing originally lived in a single file, [index.html](index.html): the HTML and CSS, the JavaScript interface, a Three.js 3D viewer, and the entire Python physics engine, which runs in the page through [Pyodide](https://pyodide.org/) (Python compiled to WebAssembly). This was wonderfully convenient right up until it wasn't. Pyodide runs on the page's single main thread, so every pattern in a "Generate & compare" run had to solve one after another, even though none of them depend on each other. Early on, the search also only handed control back to the browser on progress updates, which meant the entire page froze while it ran. This was not a major success. The fix for the freezing was to yield back to the browser on every single iteration, but the one-thread ceiling is structural, and no amount of clever yielding gets around it.
 
 That ceiling is what led to the desktop build in [desktop/](desktop/). Rather than rewrite anything, I kept the interface as a near-identical copy in [desktop/ui/index.html](desktop/ui/index.html), pulled the Python out into [desktop/engine.py](desktop/engine.py), and wrote a small host in [desktop/app.py](desktop/app.py) that shows the interface in a native window via [pywebview](https://pywebview.flowrl.com/). Specifically, `run_all_patterns_parallel` in the engine gives each bracing pattern its own CPU process. On a 10-core machine, a four-pattern run at 400 iterations each went from 14.9 seconds to 5.5 seconds, about 2.7× faster. After doing so, I added STEP export in [desktop/cad_export.py](desktop/cad_export.py), which turns a solved design into real solid bodies so it can go straight into a CAD or ANSYS model.
 
@@ -27,9 +27,17 @@ The next ANSYS run had every mode 5–15% above the tool, which was the opposite
 
 In order to fix this without making the polish 10–50× slower, the polish now measures a convergence factor for each target on the coarse winner, aims at shifted targets on its own grid, and hands the card a re-solve on the fine grid. My first version paired modes between the two grids by strength. When two weak modes swapped places, it compared a 477Hz mode against a 615Hz one. Following each mode by its shape fixed that. Whether the corrected cards land within a percent or two of ANSYS is the next run I have queued up.
 
+That run was humbling in a useful way. The tool kept agreeing with ANSYS on some designs and disagreeing on others, so I stopped comparing whole guitars and started checking the solver against answers I could trust. The clamped edge was the first thing to fall over. It fixed the nodes just outside the outline, which makes the plate up to a cell too big, and on a clamped circle it read 8.5% low at the search grid. I moved every edge onto the true outline instead, with cut cells and a ghost ring, and the circle now lands within 0.7% of the exact (Leissa) answer at GN 34. One wrinkle took a while to spot. With through-thickness shear on, a clamp has to stop the cross-section rotating, not just the slope, or the top reads softer every time the grid gets finer.
+
+Exact solutions only exist for bare plates, so in order to check the braces I built a small independent 3D solid model in scikit-fem: quadratic bricks, the same orthotropic spruce I give ANSYS, and a 300 × 200mm clamped plate carrying braces and a bridge. The bare plate agrees with the tool to within 1%. The old line-beam braces read 15–19% low against it. Specifically, they only stiffened bending along the brace, and a glued footprint is close to rigid across its width too. Adding the footprint, a wider 40-thickness flange, and a series rule for partly covered grid cells brought every braced case within 5%. The 40 is fitted to those same rectangles, so that part isn't independent.
+
+The awkward result is that the corrected solver now reads 10–29% above my existing guitar ANSYS runs, while the old one sat within about 3% on Tiptest. The old agreement was two errors cancelling: a soft clamp against stiffness missing elsewhere. The 3D model and the exact solutions both side with the new solver, which points at the ANSYS setup. The obvious suspects are a fixed support scoped to the rim's edge lines instead of its faces, and penalty-based contacts. A bare-plate ANSYS run settles it: the tool predicts 110.5, 199.4 and 225.2Hz clamped and 58.8, 132.5 and 138.4Hz simply supported. Until that's done, the Solver model setting in Setup can switch back to the old solver (v1), which reproduces earlier results exactly.
+
+Along the way, the browser build stopped carrying its own copy of the engine. [tools/build_web.py](tools/build_web.py) generates [index.html](index.html) from the desktop interface, and the page fetches [desktop/engine.py](desktop/engine.py) when it starts, so the two builds can't drift apart. The whole validation plan lives in [tests/validation.py](tests/validation.py), and its latest results are in [docs/validation.md](docs/validation.md).
+
 ## Using the browser app
 
-Open the [live site](https://lucalo44.github.io/Modal-Guitar-Bracing-Tool/) in a recent Chrome, Edge, or Firefox. The first load downloads numpy and scipy for Pyodide, so the badge in the top-right reads "Loading physics engine…" for anywhere from a few seconds to about a minute. Once it says "Engine ready," you're good to go. (If it hangs much longer than that, an ad-blocker blocking pyscript.net or the CDN is the usual culprit.) You can also just open `index.html` locally, although Chrome and Edge block the folder picker on `file://` pages, so use "Select data folder (compatibility mode)" if you need to import measured data that way.
+Open the [live site](https://lucalo44.github.io/Modal-Guitar-Bracing-Tool/) in a recent Chrome, Edge, or Firefox. The first load downloads numpy and scipy for Pyodide, so the badge in the top-right reads "Loading physics engine…" for anywhere from a few seconds to about a minute. Once it says "Engine ready," you're good to go. (If it hangs much longer than that, an ad-blocker blocking pyscript.net or the CDN is the usual culprit.) To run it locally, serve the repository folder rather than double-clicking `index.html` (for example `python -m http.server` in the repo, then open http://localhost:8000), since the page fetches `desktop/engine.py` at start-up and a `file://` page can't. After changing [desktop/ui/index.html](desktop/ui/index.html), run `python tools/build_web.py` to regenerate the browser page.
 
 The app walks you through four tabs, from left to right:
 
@@ -128,11 +136,29 @@ Each brace is modeled as a Timoshenko beam glued along its path, straight or cur
 2. **Shear.** Braces are tall, so they also deform in shear, which softens a brace's effective bending stiffness to about EI / (1 + EI·k² / κGA) for a bend of wavenumber k along it. This matters a lot for wood (E/G ≈ 15) and even more for carbon fiber (E/G ≈ 27). The shear modulus G comes from the brace shear model chosen in Setup.
 3. **Twisting.** Because a brace is glued down, it turns with the plate's cross-section rotation across it (the slope ∂w/∂n minus the plate's shear strain in that direction), and resists that twist with a torsional stiffness GJ.
 
-Each brace's mass (density × cross-section × length) is spread onto the plate grid along its length, at the spacing set by the brace discretization slider. The bridge is handled the same way, as a hardwood block glued over its footprint that adds bending stiffness, through-thickness shear stiffness (G_b·h_b), mass, and rotary inertia about the plate's mid-plane.
+The plate strip in that T-section is 40 plate thicknesses wide (about 112 mm on a 2.8 mm top). That width was chosen against an independent 3D solid model of single, parallel and crossing braces on a clamped spruce plate, where 40 gave a mean error of 1.7% and the old 20 gave 2.0%, almost all of it on the fundamental. An optional flange cap limits each side of the strip to half the gap to the next brace; it's off by default, because against the same 3D model it moved closely spaced braces further from the answer, not closer.
+
+A line beam only stiffens bending along the brace. In the real top, the glued footprint is also far stiffer than bare plate for bending across the brace and for through-thickness shear, which shortens the panels between braces. So each footprint is rasterized every 1 mm, and on the curvature rows it covers it adds the composite plate + brace stiffness across the brace, D_add, for the curvature across it, κ_nn = n·κ·n. Plate and footprint act in series across the brace, so a row a fraction c of whose cell is footprint gets
+
+> D_eff = D_p / (1 − c'),  c' = c·D_add / (D_p + D_add)
+
+which is exactly D_p + D_add on a fully covered row and only about twice the plate's stiffness on a coarse row the footprint half covers. Adding the stiffness in parallel instead made a half-covered row rigid, which read about a cell too stiff.
+
+Each brace's mass (density × cross-section × length) is spread onto the plate grid along its length, at the spacing set by the brace discretization slider. The bridge is handled the same way, as a hardwood block glued over its footprint that adds bending stiffness, through-thickness shear stiffness (G_b·h_b), mass, and rotary inertia about the plate's mid-plane. Its stiffening uses the same series rule, applied per direction: each cell near the block is sub-sampled, plate and block are in series along the bending direction and in parallel across it. Where a brace runs over the bridge on the other face, brace, plate and bridge bend as one three-layer section about a shared neutral axis, rather than as two composites that each count the plate.
+
+The Solver model section in Setup can switch all of this back to the earlier solver (v1: staircase clamp, line braces with a 20-thickness flange, parallel bridge stiffening), which reproduces older results for comparison with older ANSYS runs.
 
 ### The edge
 
-The plate's edge can be clamped (no movement and no rotation, like a top glued firmly into the rims), simply supported (no movement, but free to rotate), or free.
+The plate's edge can be clamped (no movement and no rotation, like a top glued firmly into the rims), simply supported (no movement, but free to rotate), or free. The sound hole is always free.
+
+Edges are imposed on the true outline, not on the grid nodes that happen to fall near it. Every node whose cell overlaps the plate is active, and its curvature rows and mass are weighted by the fraction of the cell that's plate (a cut-cell grid). A ring of ghost nodes outside gives every active row its full stencil; ghosts carry almost no mass and are only held by complete second differences at a tiny weight, which vanish on rigid-body motion. Then:
+
+1. **Free:** nothing more. The weighted energy alone gives the natural edge condition.
+2. **Simply supported:** w = 0 penalty pins on the outline, plus, with plate shear, no rotation about the edge normal (γ_t = 0), which is the "hard" support the Navier solution assumes.
+3. **Clamped:** those pins plus zero rotation of the cross-section. With plate shear, that's the section rotation ψ = −∇w + γ, not the slope: the normal pin is w_n − γ_n = 0, read as w(x + δn) − w(x − δn) − 2δ·γ_n with δ = 0.45 grid spacings. Pinning the slope alone let the edge rotate through shear, and the clamped top read softer and softer as the grid refined.
+
+The earlier solver clamped by fixing the nodes just outside the outline, which made the plate up to a cell too large (about −290/GN percent on the fundamental), and it deleted curvature rows near free edges, which dropped a strip of bending energy.
 
 ### What it solves for
 
@@ -163,7 +189,7 @@ The search itself is simulated annealing. Each iteration nudges the design (resi
 
 The polish is a short, cooler annealing run on a finer grid (GN 50 or more), warm-started from the coarse winner. The card then reports a re-solve on the final display grid, GN 150 by default.
 
-A finite-difference answer only converges as the grid spacing goes to zero, and with braces on the top, the polish grid is still a few percent off. The error has two sources. Each brace's stiffness and mass are spread onto its four nearest grid nodes, and the clamped edge follows the grid in steps. Both depend on where the braces and edge fall relative to the nodes, so the error can go either way. On one five-brace Experimental top, every mode rose 2–7% from GN 60 to GN 160. On an X-brace, the modes fell 2–6%. Higher modes, with shorter wavelengths, move the most.
+A finite-difference answer only converges as the grid spacing goes to zero, and with braces on the top, the polish grid is still a few percent off. With the edge on the true outline, the remaining error is the braces: each one is spread onto its four nearest grid nodes, and how that reads depends on where the brace falls relative to them. Braced tops now converge from above, typically 2–4% from GN 80 to GN 200, with the higher modes moving most.
 
 To correct for this, the coarse winner is solved once on both grids. For each target i,
 
@@ -173,11 +199,23 @@ is how far that target's mode moves between them. The polish then searches again
 
 Modes are followed between the grids by shape, using the same MAC as the shape-matching cost. A pair needs a MAC above 0.5, and each fine-grid mode goes to only one target. A target whose mode can't be followed uses the median of the other ratios. The card reports those same modes from the fine solve, rather than re-pairing them by strength. The factors are measured on the coarse winner, not the final design. They drift as the polish changes the design, so a few percent can remain on individual modes, and the fine solve shows that residual. Each card lists the factors it used next to "Grid correction."
 
+The card also solves the design on a third grid between the polish and display grids and Richardson-extrapolates each target's mode with the observed order of convergence p:
+
+> f_∞ = f₃ + (f₃ − f₂)·g₃^−p / (g₂^−p − g₃^−p)
+
+p comes from the three grids when they converge monotonically, and falls back to 1 (marked "~") when they don't. The card shows f_∞ ± 1.25·|f₃ − f_∞|, the grid uncertainty of the number above it.
+
 ### How accurate it is
 
-The solver was checked against the one case with an exact answer, a simply supported rectangular orthotropic plate. The thin plate matches Navier's series solution to within 0.3% across the first six modes. With through-thickness shear on, a 2.8 mm spruce plate matches the closed-form Mindlin solution (including rotary inertia) to within 0.2%. A 10 mm plate, where shear matters much more, converges to about 1% below it, because the grid's simply supported edge lets the shear strain run along the edge while the closed-form solution doesn't. On real tops, a few simplifications are worth keeping in mind:
+The full check is in [docs/validation.md](docs/validation.md), regenerated by `python tests/validation.py` and `python tests/make_report.py`. In short:
 
-1. The grid isn't fully converged. Depending on where the braces fall on it, frequencies move a few percent in either direction as the resolution increases. The grid correction above handles most of this, and GN 150 is within about 1–3% of converged.
+1. **Exact solutions.** A simply supported orthotropic rectangle matches Navier's series to 0.14% (thin plate), 0.22% (2.8 mm, Mindlin with rotary inertia) and 0.53% (10 mm). Clamped, simply supported and free circles match Leissa's values to within 1% from GN 50 (the clamped fundamental within 0.7% even at GN 34), a clamped square to 0.9%, and a clamped plate with a free central hole matches a Morley finite element reference to 0.6%.
+2. **An independent 3D solid model.** On a clamped 300 × 200 mm spruce plate (ANSYS's material), the bare plate agrees to 0.9%, and single, parallel and crossing braces, a bridge, and a brace over the bridge agree to within 2.1–5.0% on the first six modes. The brace fundamental still reads 2–4% low.
+3. **Convergence.** Bare tops change under 0.4% from GN 80 to GN 200. Braced tops stay within 1.4–6.6% across GN 34–200 (the old solver drifted 8–24%), but still wiggle by up to a percent as braces land differently on the grid, so the card's grid estimate is worth reading.
+
+On real tops, a few simplifications are worth keeping in mind:
+
+1. The grid isn't fully converged for braces. A brace is a line beam reading the grid, so its stiffness ripples by about 1% as it crosses a cell on the GN 34 search grid (0.4% at GN 80). The grid correction and the card's grid estimate handle most of this.
 2. The top is flat, so doming isn't represented.
 3. Braces have rectangular, tapered cross-sections, so peaked or scalloped profiles will behave somewhat differently.
 4. The grain is assumed to run along the body's length.

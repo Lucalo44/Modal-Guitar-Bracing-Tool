@@ -82,6 +82,11 @@ def _dilate(mask):
             out |= np.roll(np.roll(mask, dj, 0), di, 1)
     return out
 
+# Always pivot on the diagonal: K - sigma*M is (near) positive definite, and
+# letting SuperLU pivot off it (threshold 0.001 before) broke the symmetric
+# ordering on the cut-cell grid's ghost links, whose diagonals are tiny:
+# GN 160 went from 4 s to 195 s with identical results.
+FACTOR_PIVOT_THRESH = 0.0
 ND_MIN_SIZE = 50000   # unknowns; above this, nested dissection beats SuperLU's MMD ordering
 
 def _bfs_levels(G, start):
@@ -145,13 +150,257 @@ def _factor_sym(A):
     A = sparse.csc_matrix(A)
     if A.shape[0] >= ND_MIN_SIZE:
         p = _nested_dissection(A)
-        lu = splu(A[p][:, p].tocsc(), permc_spec='NATURAL', diag_pivot_thresh=0.001,
+        lu = splu(A[p][:, p].tocsc(), permc_spec='NATURAL', diag_pivot_thresh=FACTOR_PIVOT_THRESH,
                   options=dict(SymmetricMode=True))
         return _PermutedLU(lu, p)
-    return splu(A, permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=0.001,
+    return splu(A, permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=FACTOR_PIVOT_THRESH,
                 options=dict(SymmetricMode=True))
 
-def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
+EDGE_MODELS = ('cutcell', 'legacy')
+CUT_SUBSAMPLE = 6            # cut-cell area fractions from a 6x6 sub-sample of each boundary cell
+CUT_GHOST_WEIGHT = 1e-3      # weight of the regularizing rows centred on pure ghost nodes
+CUT_MASS_FLOOR = 1e-6
+CLAMP_SLOPE_SPACING = 1.5    # clamped: one zero-normal-slope pin per this many grid spacings
+CLAMP_SLOPE_OFFSET = 0.45    # ...comparing w at +-this many grid spacings along the outline normal
+GRID_OFFSET = (0.0, 0.0)     # test hook (VALIDATION_PLAN Stage 4): shifts the grid origin by this many cells
+
+def build_grid(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN, edge_model='cutcell'):
+    """Dispatch to the cut-cell grid (default) or the legacy one. See
+    _build_grid_cutcell and _build_grid_legacy."""
+    if edge_model == 'legacy':
+        return _build_grid_legacy(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN)
+    return _build_grid_cutcell(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN)
+
+def _cell_fractions(X, Y, cand, dd, poly_local, hx, hy, hr):
+    """Area fraction of each candidate node's cell [x +- dd/2, y +- dd/2]
+    that lies inside the outline and outside the sound hole, from a
+    CUT_SUBSAMPLE^2 sub-sample of the cell."""
+    s = CUT_SUBSAMPLE
+    off = (np.arange(s) + 0.5)/s - 0.5
+    ox, oy = np.meshgrid(off*dd, off*dd); ox, oy = ox.ravel(), oy.ravel()
+    px = (X[cand][:, None] + ox[None, :]).ravel(); py = (Y[cand][:, None] + oy[None, :]).ravel()
+    ins = points_in_polygon(px, py, poly_local)
+    if hr > 0:
+        ins &= np.hypot(px - hx, py - hy) >= hr
+    return ins.reshape(-1, s*s).mean(axis=1)
+
+def _build_grid_cutcell(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
+    """Cut-cell finite-difference plate grid. The plate's energy is
+    integrated over the true outline and sound hole instead of over the
+    staircase of grid nodes that happen to fall inside them:
+
+      * every node whose cell [x +- dd/2, y +- dd/2] overlaps the plate is
+        'active'; its curvature (and shear-strain) rows are weighted by the
+        fraction of the cell that's plate, and so is its mass;
+      * a ring of ghost nodes around the active set gives every active row
+        its full 3x3 stencil. Ghosts carry (almost) no mass, and the only
+        rows centred on them are complete second differences at a tiny
+        weight (CUT_GHOST_WEIGHT), which vanish on any linear field, so
+        they regularize the ghosts without touching rigid-body motion;
+      * edges are then imposed on the TRUE outline, never on grid nodes:
+          free (sound hole always; outline when bc_mode='free'): nothing --
+            the weighted energy alone gives the natural condition;
+          simply supported: w = 0 penalty pins on the outline (P);
+          clamped: those pins plus zero normal slope, w(x + d n) =
+            w(x - d n) with d = CLAMP_SLOPE_OFFSET*dd, at stations every
+            CLAMP_SLOPE_SPACING*dd. The difference form fixes the slope
+            without also forcing the curvature to zero.
+
+    The legacy grid (_build_grid_legacy) clamped by fixing the nodes just
+    outside the outline, which made the plate up to a cell too big (about
+    -290/GN percent on the fundamental), and simply deleted curvature rows
+    near free edges, which dropped a strip of bending energy (+16% on a
+    free top's mode 2 between GN 50 and 200). Same return dict either way."""
+    poly_phys = [(p['fx'] * Lx, p['fy'] * Ly) for p in poly_frac]
+    xs = [p[0] for p in poly_phys]; ys = [p[1] for p in poly_phys]
+    bbx0, bbx1 = min(xs), max(xs); bby0, bby1 = min(ys), max(ys)
+    dd = max(bbx1 - bbx0, bby1 - bby0) / (GN - 1)
+    margin = 4
+    bbx0 -= (margin + GRID_OFFSET[0])*dd; bby0 -= (margin + GRID_OFFSET[1])*dd
+    nx = int(round((bbx1 - bbx0) / dd)) + margin + 1
+    ny = int(round((bby1 - bby0) / dd)) + margin + 1
+    poly_local = [(x - bbx0, y - bby0) for x, y in poly_phys]
+    hx_local = hole_cx * Lx - bbx0; hy_local = hole_cy * Ly - bby0
+    hr = hole_r * min(Lx, Ly)
+
+    ii, jj = np.meshgrid(np.arange(nx), np.arange(ny))
+    X = (ii * dd).ravel(); Y = (jj * dd).ravel()
+    in_poly = points_in_polygon(X, Y, poly_local).reshape(ny, nx)
+    in_hole = (np.hypot(X - hx_local, Y - hy_local) < hr).reshape(ny, nx) if hr > 0 else np.zeros_like(in_poly)
+    inside = in_poly & ~in_hole
+    # Cells that can be cut: any node whose 8-neighbourhood isn't uniformly in or out.
+    cand = (_dilate(inside) & _dilate(~inside)).ravel()
+    frac = inside.astype(float).ravel()
+    if cand.any():
+        frac[cand] = _cell_fractions(X, Y, cand, dd, poly_local, hx_local, hy_local, hr)
+    frac = frac.reshape(ny, nx)
+    active = frac > 0
+    unknown = _dilate(active)
+    free = ~unknown   # absent nodes: nothing is fixed at a node any more
+
+    node_id = -np.ones((ny, nx), dtype=np.int64)
+    nodes_j, nodes_i = np.nonzero(unknown)
+    N = nodes_i.size
+    node_id[nodes_j, nodes_i] = np.arange(N)
+    if int(inside.sum()) < 20:
+        return {'N': 0, 'nx': nx, 'ny': ny, 'dd': dd}
+
+    # Rows: every active node (weight = cell fraction) plus every ghost node,
+    # at CUT_GHOST_WEIGHT but only where the stencil is complete.
+    def complete(stencil):
+        ok = np.ones_like(unknown)
+        for di, dj, _ in stencil:
+            ok &= np.roll(np.roll(unknown, -dj, 0), -di, 1)
+        return ok
+    sxx = [(-1,0,1.0), (0,0,-2.0), (1,0,1.0)]
+    syy = [(0,-1,1.0), (0,0,-2.0), (0,1,1.0)]
+    sxy = [(1,1,0.25), (1,-1,-0.25), (-1,1,-0.25), (-1,-1,0.25)]
+    ghost_rows = unknown & ~active & complete(sxx) & complete(syy) & complete(sxy)
+    centre = active | ghost_rows
+    cj, ci = np.nonzero(centre)
+    row_w = np.where(active[cj, ci], frac[cj, ci], CUT_GHOST_WEIGHT)
+    rows = np.arange(ci.size)
+    row_xy = np.stack([ci*dd + bbx0, cj*dd + bby0], axis=1)
+    sw = np.sqrt(row_w)
+    c2 = 1.0/(dd*dd)
+    def op(stencil, scale):
+        R, C, V = [], [], []
+        for di, dj, c in stencil:
+            nid = node_id[cj+dj, ci+di]
+            ok = nid >= 0
+            R.append(rows[ok]); C.append(nid[ok]); V.append(c*scale*sw[ok])
+        return sparse.coo_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))),
+                                 shape=(max(ci.size, 1), N)).tocsr()
+    Lxx = op(sxx, c2); Lyy = op(syy, c2); Lxy = op(sxy, c2)
+
+    node_frac = frac[nodes_j, nodes_i]
+    mass_scale = np.maximum(node_frac, CUT_MASS_FLOOR)
+    Xmap, Sx, Sx_ends, wlx = _shear_links_cut(node_id, frac, unknown, dd, 1, 0)
+    Ymap, Sy, Sy_ends, wly = _shear_links_cut(node_id, frac, unknown, dd, 0, 1)
+    # Pins on the true outline: w = 0 (ss and clamped), plus, for clamped,
+    # zero rotation of the cross-section. In a thin plate that's zero
+    # normal slope. With plate shear the section rotation is
+    # psi = -grad(w) + gamma, so a clamp fixes psi, not the slope: the
+    # normal pin is w_n - gamma_n = 0 and a tangential pin gamma_t = 0
+    # (w_t is already zero along a pinned edge). Pinning the slope alone
+    # leaves the edge free to rotate through shear, which reads softer and
+    # softer as the grid refines. The gamma parts go in P_gamma, which
+    # evaluate_design only uses when plate shear is on.
+    P = None; P_gamma = None
+    nlx, nly = int(Sx.shape[0]), int(Sy.shape[0])
+    if bc_mode in ('ss', 'clamped'):
+        poly = np.array(poly_local + [poly_local[0]])
+        seg = poly[1:] - poly[:-1]
+        seg_len = np.hypot(seg[:, 0], seg[:, 1])
+        s = np.concatenate([[0.0], np.cumsum(seg_len)])
+        def stations(spacing):
+            n_pins = max(8, int(np.ceil(s[-1] / (spacing*dd))))
+            sq = np.linspace(0.0, s[-1], n_pins, endpoint=False)
+            pts = np.stack([np.interp(sq, s, poly[:, 0]), np.interp(sq, s, poly[:, 1])], axis=1)
+            k = np.clip(np.searchsorted(s, sq, side='right') - 1, 0, len(seg) - 1)
+            t = seg[k] / np.maximum(seg_len[k], 1e-30)[:, None]
+            return pts, np.stack([-t[:, 1], t[:, 0]], axis=1), t
+        def bil(pts, lmap=None, half=(0.0, 0.0)):
+            fx, fy = pts[:, 0]/dd - half[0], pts[:, 1]/dd - half[1]
+            m = node_id if lmap is None else lmap
+            my, mx = m.shape
+            i0 = np.clip(np.floor(fx).astype(int), 0, mx-2); j0 = np.clip(np.floor(fy).astype(int), 0, my-2)
+            tx, ty = np.clip(fx - i0, 0, 1), np.clip(fy - j0, 0, 1)
+            pci = np.stack([i0, i0+1, i0, i0+1], 1); pcj = np.stack([j0, j0, j0+1, j0+1], 1)
+            Wp = np.stack([(1-tx)*(1-ty), tx*(1-ty), (1-tx)*ty, tx*ty], 1)
+            return m[pcj, pci], Wp
+        wblocks, gblocks, nrows = [], [], []
+        pts, _, _ = stations(SS_PIN_SPACING)
+        pid, Wp = bil(pts)
+        wblocks.append((pid, Wp)); gblocks.append(None); nrows.append(len(pts))
+        if bc_mode == 'ss':
+            # Hard simple support (the Navier case): with plate shear the
+            # section can't rotate ABOUT the edge's normal either, gamma_t = 0.
+            pts, nrm, tng = stations(CLAMP_SLOPE_SPACING)
+            d = CLAMP_SLOPE_OFFSET*dd
+            gx_id, gx_w = bil(pts, Xmap, (0.5, 0.0)); gy_id, gy_w = bil(pts, Ymap, (0.0, 0.5))
+            wblocks.append(None)
+            gblocks.append((np.concatenate([gx_id, np.where(gy_id >= 0, gy_id + nlx, -1)], 1),
+                            np.concatenate([2*d*tng[:, :1]*gx_w, 2*d*tng[:, 1:]*gy_w], 1)))
+            nrows.append(len(pts))
+        if bc_mode == 'clamped':
+            pts, nrm, tng = stations(CLAMP_SLOPE_SPACING)
+            d = CLAMP_SLOPE_OFFSET*dd
+            idp, Wpp = bil(pts + d*nrm); idm, Wpm = bil(pts - d*nrm)
+            gx_id, gx_w = bil(pts, Xmap, (0.5, 0.0)); gy_id, gy_w = bil(pts, Ymap, (0.0, 0.5))
+            # normal rotation: w(+) - w(-) - 2d * n.gamma
+            wblocks.append((np.concatenate([idp, idm], 1), np.concatenate([Wpp, -Wpm], 1)))
+            gblocks.append((np.concatenate([gx_id, np.where(gy_id >= 0, gy_id + nlx, -1)], 1),
+                            np.concatenate([-2*d*nrm[:, :1]*gx_w, -2*d*nrm[:, 1:]*gy_w], 1)))
+            nrows.append(len(pts))
+            # tangential rotation: 2d * t.gamma
+            wblocks.append(None)
+            gblocks.append((np.concatenate([gx_id, np.where(gy_id >= 0, gy_id + nlx, -1)], 1),
+                            np.concatenate([2*d*tng[:, :1]*gx_w, 2*d*tng[:, 1:]*gy_w], 1)))
+            nrows.append(len(pts))
+        def stack(blocks, ncols):
+            R, C, V = [], [], []; r0 = 0
+            for blk, n in zip(blocks, nrows):
+                if blk is not None:
+                    ids, W = blk; ok = ids >= 0
+                    prow = np.broadcast_to(np.arange(n)[:, None] + r0, ids.shape)
+                    R.append(prow[ok]); C.append(ids[ok]); V.append(W[ok])
+                r0 += n
+            if not R:
+                return sparse.csr_matrix((r0, ncols))
+            return sparse.coo_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))), shape=(r0, ncols)).tocsr()
+        P = stack(wblocks, N)
+        P_gamma = stack(gblocks, nlx + nly)
+
+    def links_at(lmap, j, i):
+        ok = (j >= 0) & (j < lmap.shape[0]) & (i >= 0) & (i < lmap.shape[1])
+        out = np.full(j.shape, -1, dtype=np.int64)
+        out[ok] = lmap[j[ok], i[ok]]
+        return out
+    def link_op(terms, n_cols):
+        R, C, V = [], [], []
+        for ids, c in terms:
+            ok = ids >= 0
+            R.append(rows[ok]); C.append(ids[ok]); V.append(c*sw[ok])
+        return sparse.coo_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))),
+                                 shape=(max(ci.size, 1), n_cols)).tocsr()
+    Gxx = link_op([(links_at(Xmap, cj, ci), 1.0/dd), (links_at(Xmap, cj, ci-1), -1.0/dd)], nlx)
+    Gyy = link_op([(links_at(Ymap, cj, ci), 1.0/dd), (links_at(Ymap, cj-1, ci), -1.0/dd)], nly)
+    q = 0.25/dd
+    Gxy = link_op([(links_at(Xmap, cj+1, ci), q), (links_at(Xmap, cj+1, ci-1), q),
+                   (links_at(Xmap, cj-1, ci), -q), (links_at(Xmap, cj-1, ci-1), -q)], nlx)
+    Gyx = link_op([(links_at(Ymap, cj, ci+1), q), (links_at(Ymap, cj-1, ci+1), q),
+                   (links_at(Ymap, cj, ci-1), -q), (links_at(Ymap, cj-1, ci-1), -q)], nly)
+    return {'Lxx': Lxx, 'Lyy': Lyy, 'Lxy': Lxy, 'N': N, 'dd': dd, 'nx': nx, 'ny': ny,
+            'nodes_i': nodes_i, 'nodes_j': nodes_j, 'node_id': node_id, 'bc_mode': bc_mode,
+            'free_mask': free, 'P': P, 'P_gamma': P_gamma, 'mass_scale': mass_scale, 'row_xy': row_xy, 'row_w': row_w,
+            'inside': inside, 'frac': frac, 'bbx0': bbx0, 'bby0': bby0, 'edge_model': 'cutcell',
+            'nlx': nlx, 'nly': nly, 'Xmap': Xmap, 'Ymap': Ymap, 'Sx': Sx, 'Sy': Sy,
+            'link_w': (wlx, wly),
+            'Sx_ends': Sx_ends, 'Sy_ends': Sy_ends, 'Gxx': Gxx, 'Gyy': Gyy, 'Gxy': Gxy, 'Gyx': Gyx}
+
+def _shear_links_cut(node_id, frac, unknown, dd, di, dj):
+    """Shear-strain links for the cut-cell grid: one per pair of
+    neighbouring unknowns with at least one active end. Each carries the
+    mean of its two ends' cell fractions as its area weight (floored at
+    CUT_GHOST_WEIGHT so ghost-ghost links stay regular). Returns the same
+    (lmap, S, ends) as _shear_links plus the weights."""
+    ny, nx = node_id.shape
+    A = node_id[:ny-dj, :nx-di].ravel(); B = node_id[dj:, di:].ravel()
+    fa = frac[:ny-dj, :nx-di].ravel(); fb = frac[dj:, di:].ravel()
+    ua = unknown[:ny-dj, :nx-di].ravel(); ub = unknown[dj:, di:].ravel()
+    keep = ua & ub & ((fa > 0) | (fb > 0))
+    n = int(keep.sum())
+    lmap = np.full(keep.size, -1, dtype=np.int64); lmap[keep] = np.arange(n)
+    a_ids, b_ids = A[keep], B[keep]
+    r = np.arange(n)
+    S = sparse.coo_matrix((np.concatenate([np.full(n, -1.0/dd), np.full(n, 1.0/dd)]),
+                           (np.concatenate([r, r]), np.concatenate([a_ids, b_ids]))),
+                          shape=(n, int(unknown.sum()))).tocsr()
+    w = np.maximum(0.5*(fa[keep] + fb[keep]), CUT_GHOST_WEIGHT)
+    return lmap.reshape(ny-dj, nx-di), S, (a_ids, b_ids), w
+
+def _build_grid_legacy(poly_frac, hole_cx, hole_cy, hole_r, Lx, Ly, bc_mode, GN):
     """Finite-difference plate grid: curvature operators Lxx, Lyy, Lxy and
     the boundary treatment, for bc_mode 'ss' (simply supported), 'clamped'
     or 'free' along the traced outline. The sound-hole edge is always free.
@@ -378,12 +627,19 @@ def _sample_brace(b, Lx, Ly, NS=10):
         pts.append((x, y, sl, t))
     return pts
 
-def braces_to_masses(braces, Lx, Ly, seg_len_mm=None):
+def braces_to_masses(braces, Lx, Ly, seg_len_mm=None, trapezoid=True):
+    """Brace mass as point masses along each centreline. With trapezoid
+    (v2), a straight brace's two end samples carry half a segment each, as a
+    curved brace's already did; v1 gave every one of the NS+1 samples a full
+    segment, one segment too much (about 1% extra mass on a long brace)."""
     xs, ys, ms = [], [], []
     for b in braces:
         wC = b['width']/1000.0; wT = (b['width'] if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b['height']/1000.0; hT = (b['height'] if b.get('heightTip') is None else b['heightTip'])/1000.0
+        straight = not (b.get('type') in ('curve', 'curve3') and b.get('cp') is not None)
         for x, y, sl, t in _sample_brace(b, Lx, Ly, _brace_ns(b, Lx, Ly, seg_len_mm)):
+            if trapezoid and straight and (t <= 0.0 or t >= 1.0):
+                sl = 0.5*sl
             A = _dim_at(wC, wT, t) * _dim_at(hC, hT, t)
             m = b.get('density', 350) * A * sl
             if m > 0:
@@ -430,7 +686,11 @@ def _brace_stations(b, Lx, Ly, spacing):
     xy = np.stack([np.interp(sq, s, P[:, 0]), np.interp(sq, s, P[:, 1])], axis=1)
     return xy, np.interp(sq, s, T), L / (n - 1)
 
-BRACE_FLANGE_WIDTH = 20.0   # width of top plate acting with each brace, in plate thicknesses (result is insensitive above ~10)
+BRACE_FLANGE_WIDTH = 40.0   # width of top plate acting with each brace, in plate thicknesses. Chosen against
+                            # an independent 3D solid model (tests/references/solid3d.py): single, parallel
+                            # and crossing braces on a clamped spruce plate, mean error 1.7% at 40 against
+                            # 2.0% at 20. The fundamental is the sensitive mode (about -6% at 20).
+BRACE_SUBLINES = 1   # parallel lines each brace's bending is spread over (see brace_stiffness_matrix)
 BRACE_SHEAR_FACTOR = 5.0/6.0   # Timoshenko shear correction for a rectangular web
 PLATE_SHEAR_FACTOR = 5.0/6.0   # same correction for the plate's through-thickness shear (Reissner-Mindlin)
 
@@ -468,7 +728,125 @@ def _assemble_rows(ids, g, coef):
     keep = (rows >= 0) & (cols >= 0) & (vals != 0)
     return rows[keep], cols[keep], vals[keep]
 
-def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, iso_shear=False, plate_shear=False):
+def _flange_gaps(braces, Lx, Ly, stations):
+    """For each brace's stations (xy, unit normals), the distance along +n
+    and along -n to the nearest OTHER brace's centreline (inf where the ray
+    meets none). Other braces are sampled every 1 mm and a sample counts as
+    on the ray when it lies within 0.75 mm of it."""
+    dense = []
+    for b in braces:
+        xy, _, _ = _brace_stations(b, Lx, Ly, 0.001)
+        dense.append(xy if xy is not None else np.zeros((0, 2)))
+    out = []
+    for i, st in enumerate(stations):
+        if st is None:
+            out.append(None); continue
+        xy, nrm = st
+        others = [dense[j] for j in range(len(braces)) if j != i and len(dense[j])]
+        if not others:
+            out.append((np.full(len(xy), np.inf), np.full(len(xy), np.inf))); continue
+        Q = np.concatenate(others)
+        d = Q[None, :, :] - xy[:, None, :]                       # (stations, samples, 2)
+        sn = d[..., 0]*nrm[:, None, 0] + d[..., 1]*nrm[:, None, 1]
+        st_ = np.abs(-d[..., 0]*nrm[:, None, 1] + d[..., 1]*nrm[:, None, 0])
+        on = st_ < 0.00075
+        plus = np.where(on & (sn > 0), sn, np.inf).min(axis=1)
+        minus = np.where(on & (sn < 0), -sn, np.inf).min(axis=1)
+        out.append((plus, minus))
+    return out
+
+FOOTPRINT_COVER_MAX = 1.0   # the series form is exact (D_p + D_add) on a fully covered row, so only clip
+
+def brace_footprint_terms(braces, Lx, Ly, grid, plate, iso_shear=False, step=0.001, Dmat=None, Gsh=(0.0, 0.0)):
+    """Each brace's footprint as a stiff strip across its own width (P0.3).
+    A line beam only stiffens bending ALONG the brace; in the real top (and
+    in a 3D solid model) the glued footprint is also far stiffer than bare
+    plate for bending ACROSS the brace and for through-thickness shear, which
+    shortens the panels between braces. The footprint is rasterized every
+    `step` (like the bridge) and, on the curvature rows it covers, adds the
+    composite plate+brace bending stiffness across the brace (the brace's
+    cross-grain modulus about the shared neutral axis, minus the plate's own
+    bending, which the plate operator already counts) for the curvature
+    across the brace, kappa_nn = n.kappa.n. Along-brace bending is left to
+    brace_stiffness_matrix, so nothing is counted twice.
+
+    Returns per-row coefficient arrays (a_xx, a_yy, a_12, a_x12, a_y12) for
+    the energy sum_r [a_xx k_xx^2 + a_yy k_yy^2 + a_12 (k_xx k_yy + k_12^2/4...)]
+    -- see evaluate_design -- plus the footprint's shear stiffness on each
+    x- and y-link, or None without braces."""
+    if not braces:
+        return None
+    tp, Ex, Ey, Gxy, nuxy = plate
+    dd = grid['dd']; nrow = grid['row_xy'].shape[0]
+    if Dmat is None:
+        nyx = nuxy*Ey/Ex; den = 1.0 - nuxy*nyx
+        Dmat = (Ex*tp**3/(12*den), Ey*tp**3/(12*den), nyx*Ex*tp**3/(12*den), Gxy*tp**3/12)
+    PXs, PYs, Cs, NX, NY, GH, AR = [], [], [], [], [], [], []
+    for b in braces:
+        xy, t, hs = _brace_stations(b, Lx, Ly, step)
+        if xy is None:
+            continue
+        tan = np.gradient(xy, axis=0); tan /= np.maximum(np.hypot(tan[:, 0], tan[:, 1]), 1e-30)[:, None]
+        nrm = np.stack([-tan[:, 1], tan[:, 0]], axis=1)
+        wC = b.get('width', 3)/1000.0; wT = (b.get('width', 3) if b.get('widthTip') is None else b['widthTip'])/1000.0
+        hC = b.get('height', 9)/1000.0; hT = (b.get('height', 9) if b.get('heightTip') is None else b['heightTip'])/1000.0
+        Eb = float(b.get('modulus', 9.79e9))
+        # across the brace: isotropic material -> same E; wood/carbon cut along the brace -> transverse modulus
+        Et = Eb if iso_shear else (Eb*0.08 if Eb <= 60e9 else 8e9)
+        Gt = isotropic_shear_modulus(Eb) if iso_shear else brace_shear_modulus(b)
+        w = _dim_at(wC, wT, t); hb = _dim_at(hC, hT, t)          # per station
+        nw = max(1, int(round(float(np.max(w))/step)))
+        u = (np.arange(nw) + 0.5)/nw - 0.5                         # across-width sample positions, fraction of w
+        c2 = nrm[:, 0]**2
+        Ep = 1.0/(c2**2/Ex + (1-c2)**2/Ey + (1.0/Gxy - 2.0*nuxy/Ex)*c2*(1-c2))
+        zp, zb = tp/2.0, tp + hb/2.0
+        zn = (Ep*tp*zp + Et*hb*zb)/(Ep*tp + Et*hb)
+        Dadd = Et*(hb**3/12.0 + hb*(zb - zn)**2) + Ep*tp*(zp - zn)**2
+        offs = w[:, None]*u[None, :]                                # (stations, nw)
+        PXs.append((xy[:, 0:1] + offs*nrm[:, 0:1]).ravel()); PYs.append((xy[:, 1:2] + offs*nrm[:, 1:2]).ravel())
+        area = np.repeat(w/nw*hs, nw)
+        Cs.append(np.repeat(Dadd, nw)*area); NX.append(np.repeat(nrm[:, 0], nw)); NY.append(np.repeat(nrm[:, 1], nw))
+        GH.append(np.repeat(Gt*hb, nw)*area); AR.append(area)
+    if not PXs:
+        return None
+    PX = np.concatenate(PXs); PY = np.concatenate(PYs); C = np.concatenate(Cs)
+    nx_ = np.concatenate(NX); ny_ = np.concatenate(NY); GHa = np.concatenate(GH)
+    area = np.concatenate(AR)
+    # Series, not parallel: across the brace, the footprint strip and the
+    # bare panel beside it share one row's curvature span, so their
+    # compliances add. A row a fraction c of whose cell is footprint (strip
+    # stiffness D_p + D_add against the plate's D_p in that direction) gets
+    #   D_eff = D_p / (1 - c'),  c' = c * D_add / (D_p + D_add),
+    # i.e. an extra D_p c'/(1 - c'). Fully covered rows (fine grids) become
+    # near-rigid, as they should; a row a coarse grid only half covers gets
+    # about twice the plate's stiffness, not a thousand times. c is capped
+    # at FOOTPRINT_COVER_MAX.
+    cov_s = area/(dd*dd)
+    cov = _spread_to_rows(grid, PX, PY, cov_s)
+    wsum = np.maximum(cov, 1e-30)
+    mom = [_spread_to_rows(grid, PX, PY, cov_s*m)/wsum
+           for m in (nx_**4, ny_**4, nx_**2*ny_**2, nx_**3*ny_, nx_*ny_**3)]
+    Dadd = _spread_to_rows(grid, PX, PY, cov_s*C/np.maximum(area, 1e-30))/wsum
+    Dp = Dmat[0]*mom[0] + Dmat[1]*mom[1] + 2.0*(Dmat[2] + 2.0*Dmat[3])*mom[2]
+    c = np.minimum(cov, FOOTPRINT_COVER_MAX)
+    cp = c*Dadd/np.maximum(Dp + Dadd, 1e-30)
+    Dx = np.where(cov > 0, Dp*cp/(1.0 - cp), 0.0)
+    acc = np.stack([Dx*m for m in mom])
+    # Through-thickness shear, the same way: footprint G_b h_b in series with
+    # the plate's h G on each link, by the fraction of the link it covers.
+    cov_n = _spread_to_nodes(grid, PX, PY, cov_s)
+    gh_n = _spread_to_nodes(grid, PX, PY, cov_s*GHa/np.maximum(area, 1e-30))
+    def link_extra(ends, Gp_h):
+        a_, b_ = ends
+        bb = np.maximum(b_, 0)
+        cl = np.where(b_ >= 0, 0.5*(cov_n[a_] + cov_n[bb]), cov_n[a_])
+        gl = np.where(b_ >= 0, 0.5*(gh_n[a_] + gh_n[bb]), gh_n[a_])/np.maximum(cl, 1e-30)
+        cl = np.minimum(cl, FOOTPRINT_COVER_MAX)
+        cpl = cl*gl/np.maximum(Gp_h + gl, 1e-30)
+        return np.where(cl > 0, Gp_h*cpl/(1.0 - cpl), 0.0)
+    return {'rows': acc, 'link_gh': (link_extra(grid['Sx_ends'], Gsh[0]), link_extra(grid['Sy_ends'], Gsh[1]))}
+
+def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, iso_shear=False, plate_shear=False, flange_cap=True, bridge=None, flange_width=None, sublines=1):
     """Each brace as a Timoshenko beam embedded in the plate, plus its
     resistance to twisting. Returns (K, n_aux): K is (N+n_shear+n_aux)
     square, where n_shear counts the plate's shear strains (stored right
@@ -517,7 +895,19 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
     n_shear = grid['nlx'] + grid['nly'] if plate_shear else 0
     parts = []
     n_aux = 0
+    # Flange cap (P0.4): each side of a brace's plate flange is at most half
+    # the perpendicular gap to the next brace, so closely spaced braces
+    # don't each count the same strip of plate.
+    st_all = []
     for b in braces:
+        xy_, t_, hs_ = _brace_stations(b, Lx, Ly, dd)
+        if xy_ is None:
+            st_all.append(None); continue
+        tg = np.gradient(xy_, axis=0); tg /= np.maximum(np.hypot(tg[:, 0], tg[:, 1]), 1e-30)[:, None]
+        st_all.append((xy_, np.stack([-tg[:, 1], tg[:, 0]], axis=1)))
+    gaps = _flange_gaps(braces, Lx, Ly, st_all) if (flange_cap and plate is not None and len(braces) > 1) else None
+    FW = BRACE_FLANGE_WIDTH if flange_width is None else float(flange_width)
+    for bi, b in enumerate(braces):
         wC = b.get('width',3)/1000.0; wT = (b.get('width',3) if b.get('widthTip') is None else b['widthTip'])/1000.0
         hC = b.get('height',9)/1000.0; hT = (b.get('height',9) if b.get('heightTip') is None else b['heightTip'])/1000.0
         modulus = b.get('modulus', 9.79e9)
@@ -526,7 +916,6 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
         if xy is None:
             continue
         n = len(xy)
-        ids, W = _bilinear_corners(grid, xy[:, 0], xy[:, 1])
         a = np.array([1.0, -2.0, 1.0]) / (hs*hs)
         # Shear strains between stations: gamma_j sits between stations j and j+1.
         gam = N + n_shear + n_aux + np.arange(n-1)
@@ -534,9 +923,6 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
         # Interior station k uses stations k-1, k, k+1 -> 12 (node, weight)
         # pairs, plus gamma' from the two strains either side of it.
         k = np.arange(1, n-1)
-        g_ids = np.concatenate([ids[k-1], ids[k], ids[k+1], gam[k][:, None], gam[k-1][:, None]], axis=1)
-        g = np.concatenate([a[0]*W[k-1], a[1]*W[k], a[2]*W[k+1],
-                            np.full((len(k), 1), -1.0/hs), np.full((len(k), 1), 1.0/hs)], axis=1)
         # Local cross-section at each station, so a tapered brace is
         # correctly softer near its tips and stiffer through its middle.
         wk = _dim_at(wC, wT, t[k]); hk = _dim_at(hC, hT, t[k])
@@ -547,12 +933,50 @@ def brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm=None, plate=None, is
             d = xy[k+1] - xy[k-1]
             c2 = (d[:, 0]**2) / np.maximum((d**2).sum(axis=1), 1e-30); s2 = 1.0 - c2
             Ep = 1.0 / (c2**2/Ex + s2**2/Ey + (1.0/Gxy - 2.0*nuxy/Ex)*c2*s2)
-            bf = BRACE_FLANGE_WIDTH * tp
+            bf = FW * tp
+            if gaps is not None and gaps[bi] is not None:
+                half = 0.5*FW*tp
+                gp, gm = gaps[bi][0][k], gaps[bi][1][k]
+                bf = np.minimum(half, 0.5*gp) + np.minimum(half, 0.5*gm)
             Ab, Af = wk*hk, bf*tp
             zb, zf = tp + hk/2.0, tp/2.0              # centroids from the plate's underside
             zn = (modulus*Ab*zb + Ep*Af*zf) / (modulus*Ab + Ep*Af)
-            EI = EI + modulus*Ab*(zb-zn)**2 + Ep*Af*(zf-zn)**2
-        parts.append(_assemble_rows(g_ids, g, EI * hs / (dd*dd)))
+            EI_T = EI + modulus*Ab*(zb-zn)**2 + Ep*Af*(zf-zn)**2
+            if bridge is not None:
+                # Where the brace runs over the bridge (on the other face),
+                # brace, plate and bridge bend as ONE section. The bridge rows
+                # already count the plate+bridge composite over the flange, so
+                # the brace adds the three-layer section minus that.
+                bpoly, hbr, Ebr = bridge
+                over = points_in_polygon(xy[k, 0], xy[k, 1], bpoly)
+                if np.any(over):
+                    Abr = bf*hbr; zr = -hbr/2.0
+                    EA3 = modulus*Ab + Ep*Af + Ebr*Abr
+                    zn3 = (modulus*Ab*zb + Ep*Af*zf + Ebr*Abr*zr)/EA3
+                    EI3 = (modulus*(wk*hk**3/12.0 + Ab*(zb-zn3)**2) + Ep*(bf*tp**3/12.0 + Af*(zf-zn3)**2)
+                           + Ebr*(bf*hbr**3/12.0 + Abr*(zr-zn3)**2))
+                    zn2 = (Ep*Af*zf + Ebr*Abr*zr)/(Ep*Af + Ebr*Abr)
+                    EI2 = Ep*(bf*tp**3/12.0 + Af*(zf-zn2)**2) + Ebr*(bf*hbr**3/12.0 + Abr*(zr-zn2)**2)
+                    EI_T = np.where(over, EI3 - EI2, EI_T)
+            EI = EI_T
+        # Sub-lines: the bending energy is shared between n_sub parallel lines
+        # spread across max(dd, brace width) about the centreline, all on the
+        # same shear strains. A single line reads the bilinear field along
+        # one track, so a brace sitting on a row of nodes and one halfway
+        # between rows bent different plate strips: on a 15 mm grid the
+        # frequency rippled about +-2.5% with a period of one cell as a brace
+        # moved across it. Two lines half a spread apart remove most of that.
+        tg = np.gradient(xy, axis=0); tg /= np.maximum(np.hypot(tg[:, 0], tg[:, 1]), 1e-30)[:, None]
+        nr = np.stack([-tg[:, 1], tg[:, 0]], axis=1)
+        spread = np.maximum(dd, _dim_at(wC, wT, t)) if sublines > 1 else np.zeros(n)
+        offs = ((np.arange(sublines) + 0.5)/sublines - 0.5) if sublines > 1 else np.zeros(1)
+        for o in offs:
+            xs_ = xy + (o*spread)[:, None]*nr
+            ids, W = _bilinear_corners(grid, xs_[:, 0], xs_[:, 1])
+            g_ids = np.concatenate([ids[k-1], ids[k], ids[k+1], gam[k][:, None], gam[k-1][:, None]], axis=1)
+            g = np.concatenate([a[0]*W[k-1], a[1]*W[k], a[2]*W[k+1],
+                                np.full((len(k), 1), -1.0/hs), np.full((len(k), 1), 1.0/hs)], axis=1)
+            parts.append(_assemble_rows(g_ids, g, EI * hs / (dd*dd) / len(offs)))
         # Shear and twist use the section halfway between stations.
         tm = 0.5*(t[:-1] + t[1:])
         wm = _dim_at(wC, wT, tm); hm = _dim_at(hC, hT, tm)
@@ -827,7 +1251,7 @@ def brace_geometry_penalty(braces, outline_frac, hole_cx, hole_cy, hole_r, Lx, L
         for x, y, sl, t in _sample_brace(b, Lx, Ly, NS):
             xs.append(x); ys.append(y); half_ws.append(_dim_at(wC, wT, t)/2.0)
         xs_a, ys_a, half_w_a = np.array(xs), np.array(ys), np.array(half_ws)
-        inside = points_in_polygon(xs_a, ys_a, poly_phys)
+        inside = _inside_outline({'outline': outline_frac, 'Lx': Lx, 'Ly': Ly}, xs_a, ys_a)
         n_out = int(np.sum(~inside))
         if n_out:
             penalty += n_out * 180.0
@@ -876,68 +1300,64 @@ def brace_overlap_penalty(braces, Lx, Ly, NS=10):
                 penalty += float(np.sum((over/max(min_sep,1e-6))**2)) * 15.0
     return penalty
 
-def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False):
+_GEOM_CACHE = {}
+_MODE_REQUEST = {}
+GEOM_CACHE_SIZE = 6
+_GEOM_KEYS = ('_offset', 'Lx', 'Ly', 'h', 'E', 'Ey', 'Gxy', 'nu', 'nuxy', 'rho', 'Gxz', 'Gyz', 'plateShear', 'bcMode', 'GN',
+              'edgeModel', 'bridgePartialComposite', 'bridgeSeries', 'holeCx', 'holeCy', 'holeR', 'bridgeStructural', 'bridgeHeightMm', 'bridgeE', 'bridgeRho',
+              'bridgeDepthMm', 'bridgeLenMm', 'bridgeFx', 'bridgeFy')
+
+def _geometry_key(geo):
+    o = geo['outline']
+    bp = geo.get('bridgePts') or []
+    return (GRID_OFFSET, tuple(geo.get(k) for k in _GEOM_KEYS),
+            hash(tuple((p['fx'], p['fy']) for p in o)), hash(tuple((p['fx'], p['fy']) for p in bp)))
+
+def _geometry_base(geo):
+    """Everything in evaluate_design that depends only on the top, its
+    material, the edge, the grid and the bridge -- not on the braces --
+    built once and cached (GEOM_CACHE_SIZE most recent geometries), since
+    an annealing run solves thousands of designs on the same top. Holds
+    the grid, the plate's curvature operators (with the shear terms), its
+    bending + shear stiffness K0, its mass M0 (diag mass, rotary inertia,
+    bridge), the nodal mass m_w0 and the pin matrix P (shear columns
+    included, brace columns added by the caller). Returns None when the
+    grid is too coarse."""
+    key = _geometry_key(geo)
+    hit = _GEOM_CACHE.get(key)
+    if hit is not None:
+        return hit
     Lx, Ly, h = geo['Lx'], geo['Ly'], geo['h']
     rho = geo['rho']
-    # Orthotropic (grain-direction-dependent) plate constants. Ex is the
-    # along-grain modulus (grain assumed to run along the plate's length,
-    # the standard luthiery convention -- this does NOT yet handle a
-    # traced body that's rotated relative to true grain direction). Ey,
-    # Gxy, nu_xy default to values that make this reduce EXACTLY to the
-    # old isotropic model when a caller doesn't supply them (an older
-    # saved project, or any payload that predates this) -- Ey=Ex,
-    # Gxy=Ex/(2(1+nu)) (the isotropic shear-modulus identity), nu_xy=nu.
     Ex = geo['E']
     nu_xy = geo.get('nuxy', geo['nu'])
     Ey = geo.get('Ey', Ex)
     Gxy = geo.get('Gxy', Ex/(2*(1+nu_xy)))
     nu_yx = nu_xy * Ey / Ex   # reciprocity -- never set independently, or the material isn't physically valid
     denom = max(1e-9, 1 - nu_xy*nu_yx)
-    D11 = Ex*h**3/(12*denom)
-    D22 = Ey*h**3/(12*denom)
-    D12 = nu_yx*D11
-    D66 = Gxy*h**3/12
-    grid = build_grid(geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly, geo['bcMode'], geo['GN'])
+    D11 = Ex*h**3/(12*denom); D22 = Ey*h**3/(12*denom); D12 = nu_yx*D11; D66 = Gxy*h**3/12
+    grid = build_grid(geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly, geo['bcMode'], geo['GN'],
+                      edge_model=geo.get('edgeModel', 'cutcell'))
     N = grid['N']
     if N < 20:
-        return {'ok': False, 'reason': 'grid_too_coarse'}
-
-    geom_penalty = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
-    geom_penalty += brace_overlap_penalty(braces, Lx, Ly)
-
+        return None
     # Through-thickness (transverse) shear: G_LT in the length-thickness
     # plane, G_RT (rolling shear, tiny in wood) in the width-thickness plane.
-    # Thin-plate theory treats both as infinite; real tops aren't, and a 3D
-    # FEA model isn't either. A payload without them solves as before.
     Gxz, Gyz = geo.get('Gxz'), geo.get('Gyz')
     plate_shear = bool(geo.get('plateShear', True)) and bool(Gxz) and bool(Gyz)
     nlx, nly = (grid['nlx'], grid['nly']) if plate_shear else (0, 0)
     n_shear = nlx + nly
-
-    seg_len_mm = geo.get('braceSegMm')
-    mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm)
-    braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
-    total_brace_mass_g = sum(mm)*1000.0
-    K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy),
-                                            iso_shear=(geo.get('braceShearModel', 'iso') == 'iso'),
-                                            plate_shear=plate_shear)
-    # Bending energy D11*k_xx^2 + 2*D12*k_xx*k_yy + D22*k_yy^2 + D66*k_xy^2
-    # (k_xy the engineering twist), from three directional curvature
-    # operators, each squared for guaranteed positive-semi-definiteness --
-    # see build_grid's docstring for the validation these went through.
-    #
-    # With plate shear this is a Reissner-Mindlin plate: the cross-sections
-    # rotate by psi = -grad(w) + gamma, where gamma = (gamma_x, gamma_y) is
-    # the through-thickness shear strain, one unknown per grid link (after
-    # the N plate nodes). Curvatures come from psi, so each operator picks
-    # up gamma's derivatives; shear energy is kappa*h*(G_xz*gamma_x^2 +
-    # G_yz*gamma_y^2). As G grows, gamma -> 0 and this is exactly the thin
-    # plate. gamma = 0 is always admissible, so the grid can't shear-lock,
-    # and every gamma pattern costs shear energy, so there are no spurious
-    # zero-energy modes.
+    # Bending energy D11 k_xx^2 + 2 D12 k_xx k_yy + D22 k_yy^2 + D66 k_xy^2
+    # (k_xy the engineering twist). With plate shear this is a
+    # Reissner-Mindlin plate: psi = -grad(w) + gamma, gamma one unknown per
+    # grid link after the N nodes; curvatures come from psi, shear energy is
+    # kappa*h*(G_xz gamma_x^2 + G_yz gamma_y^2). gamma = 0 is always
+    # admissible (no shear locking) and every gamma pattern costs energy (no
+    # spurious zero-energy modes).
     Lxx, Lyy, Lxy = grid['Lxx'], grid['Lyy'], grid['Lxy']
+    Z = lambda r, c: sparse.csr_matrix((r, c))
     if plate_shear:
-        R = Lxx.shape[0]; Z = lambda r, c: sparse.csr_matrix((r, c))
+        R = Lxx.shape[0]
         Cxx = sparse.hstack([Lxx, -grid['Gxx'], Z(R, nly)], format='csr')
         Cyy = sparse.hstack([Lyy, Z(R, nlx), -grid['Gyy']], format='csr')
         Cxy = sparse.hstack([2*Lxy, -grid['Gxy'], -grid['Gyx']], format='csr')
@@ -946,36 +1366,146 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     def bending(d11, d22, d12, d66, S=None):
         W = (lambda A: A) if S is None else (lambda A: S @ A)
         return d11*(Cxx.T@W(Cxx)) + d22*(Cyy.T@W(Cyy)) + d12*(Cxx.T@W(Cyy) + Cyy.T@W(Cxx)) + d66*(Cxy.T@W(Cxy))
-    K = bending(D11, D22, D12, D66)
-    br = _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly)
-    bridge_mass_g = 0.0
+    K0 = bending(D11, D22, D12, D66)
+    br = _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly, nu_xy)
+    m_bridge = np.zeros(N); bridge_mass_g = 0.0
     if br is not None:
-        K = K + bending(*br['D'], S=br['cover'])
-        braceM = braceM + br['m_nodes']
-        bridge_mass_g = br['mass_g']
-    m_w = rho*h*grid['mass_scale'] + braceM
-    M = sparse.diags(np.concatenate([m_w, np.zeros(n_shear + n_aux)]), format='csr')
+        e11, e22, e12, e66 = (sparse.diags(v) for v in br['rowD'])
+        K0 = K0 + (Cxx.T@e11@Cxx + Cyy.T@e22@Cyy + Cxx.T@e12@Cyy + Cyy.T@e12@Cxx + Cxy.T@e66@Cxy)
+        m_bridge = br['m_nodes']; bridge_mass_g = br['mass_g']
+    m_w0 = rho*h*grid['mass_scale'] + m_bridge
+    M0 = sparse.diags(np.concatenate([m_w0, np.zeros(n_shear)]), format='csr')
     if plate_shear:
         cx, cy = (br['link_cover'] if br is not None else (np.zeros(nlx), np.zeros(nly)))
-        Gbh = br['Gh'] if br is not None else 0.0
-        K = K + sparse.block_diag((sparse.csr_matrix((N, N)),
-                                   sparse.diags(PLATE_SHEAR_FACTOR*(h*Gxz + Gbh*cx)),
-                                   sparse.diags(PLATE_SHEAR_FACTOR*(h*Gyz + Gbh*cy))), format='csr')
-        # Rotary inertia: the cross-sections' rotation psi carries
-        # rho*h^3/12 per area (plus the bridge block's, about the plate's
-        # mid-plane), with psi_x = -w,x + gamma_x on each x-link.
+        bgx, bgy = (br['link_gh'] if br is not None else (0.0, 0.0))
+        # Cut-cell grids weight each link by the plate area it stands for.
+        wlx, wly = grid.get('link_w') or (np.ones(nlx), np.ones(nly))
+        K0 = K0 + sparse.block_diag((Z(N, N), sparse.diags(PLATE_SHEAR_FACTOR*(h*Gxz*wlx + bgx)),
+                                     sparse.diags(PLATE_SHEAR_FACTOR*(h*Gyz*wly + bgy))), format='csr')
+        # Rotary inertia: the cross-sections' rotation psi carries rho*h^3/12
+        # per area (plus the bridge block's, about the plate's mid-plane).
         Rx = sparse.hstack([-grid['Sx'], sparse.identity(nlx), Z(nlx, nly)], format='csr')
         Ry = sparse.hstack([-grid['Sy'], Z(nly, nlx), sparse.identity(nly)], format='csr')
         Ib = br['I'] if br is not None else 0.0
-        M_rot = Rx.T@sparse.diags(rho*h**3/12.0 + Ib*cx)@Rx + Ry.T@sparse.diags(rho*h**3/12.0 + Ib*cy)@Ry
-        M = M + sparse.block_diag((M_rot, sparse.csr_matrix((n_aux, n_aux))), format='csr') if n_aux else M + M_rot
+        M0 = M0 + Rx.T@sparse.diags(rho*h**3/12.0*wlx + Ib*cx)@Rx + Ry.T@sparse.diags(rho*h**3/12.0*wly + Ib*cy)@Ry
+    P = None
+    if grid.get('P') is not None:
+        Pw = grid['P']; npin = Pw.shape[0]
+        if n_shear:
+            Pg = grid.get('P_gamma')
+            P = sparse.hstack([Pw, Pg if Pg is not None else Z(npin, n_shear)], format='csr')
+        else:
+            P = Pw
+    out = {'grid': grid, 'Ex': Ex, 'Ey': Ey, 'Gxy': Gxy, 'nu_xy': nu_xy, 'plate_shear': plate_shear,
+           'nlx': nlx, 'nly': nly, 'Cxx': Cxx, 'Cyy': Cyy, 'Cxy': Cxy, 'K0': K0.tocsr(), 'M0': M0.tocsr(),
+           'm_w0': m_w0, 'bridge_mass_g': bridge_mass_g, 'P': P,
+           'bridge_section': ([tuple(q) for q in _bridge_footprint(geo, Lx, Ly)],
+                              geo.get('bridgeHeightMm', BRIDGE_DEFAULTS['bridgeHeightMm'])/1000.0,
+                              float(geo.get('bridgeE', BRIDGE_DEFAULTS['bridgeE']))) if br is not None else None}
+    if len(_GEOM_CACHE) >= GEOM_CACHE_SIZE:
+        _GEOM_CACHE.pop(next(iter(_GEOM_CACHE)))
+    _GEOM_CACHE[key] = out
+    return out
+
+SOLVER_V1 = {'edgeModel': 'legacy', 'braceFootprint': False, 'flangeCap': False, 'bridgePartialComposite': False,
+             'braceBridgeSection': False, 'bridgeSeries': False, 'braceFlangeWidth': 20.0, 'braceSublines': 1,
+             'braceMassTrapezoid': False}
+
+def solver_geo(geo):
+    """geo with the solverVersion preset applied: 'v1' restores the pre-v2
+    solver exactly (staircase clamp, deleted free-edge rows, line braces
+    with a 20-thickness flange, parallel bridge); anything else is v2.
+    v1 overrides any per-feature flags the payload also carries (the UI
+    always sends them), so choosing v1 always means exactly v1."""
+    if geo.get('solverVersion') == 'v1':
+        return {**geo, **SOLVER_V1}
+    return geo
+
+def cost_floor(geo, braces, mass_weight, n_braces=None):
+    """The part of objective() that's known before any solve: geometry
+    penalty, mass penalty and the per-brace cost. Returns (floor,
+    geom_penalty) so evaluate_design can reuse the penalty."""
+    Lx, Ly = geo['Lx'], geo['Ly']
+    gp = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
+    gp += brace_overlap_penalty(braces, Lx, Ly)
+    _, _, mm = braces_to_masses(braces, Lx, Ly, geo.get('braceSegMm'), trapezoid=geo.get('braceMassTrapezoid', True))
+    floor = gp + mass_weight*(sum(mm)*1000.0/40.0)
+    if n_braces is not None:
+        floor += 0.35*max(0, n_braces - 5)
+    return floor, gp
+
+SKIP_ACCEPT_PROB = 1e-6
+
+def can_skip(floor, cur_cost, best_cost, T):
+    """P1.4: True when the cost floor alone makes the move both worse than
+    the best so far and essentially impossible to accept
+    (exp(-dCost/40T) < SKIP_ACCEPT_PROB), so the solve can be skipped."""
+    if floor <= best_cost or floor <= cur_cost:
+        return False
+    return (floor - cur_cost) > -math.log(SKIP_ACCEPT_PROB)*max(1e-6, T*40)
+
+def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False, geom_penalty=None):
+    geo = solver_geo(geo)
+    Lx, Ly, h = geo['Lx'], geo['Ly'], geo['h']
+    base = _geometry_base(geo)
+    if base is None:
+        return {'ok': False, 'reason': 'grid_too_coarse'}
+    grid = base['grid']; N = grid['N']
+    Ex, Ey, Gxy, nu_xy = base['Ex'], base['Ey'], base['Gxy'], base['nu_xy']
+    plate_shear, nlx, nly = base['plate_shear'], base['nlx'], base['nly']
+    n_shear = nlx + nly
+    Cxx, Cyy, Cxy = base['Cxx'], base['Cyy'], base['Cxy']
+
+    if geom_penalty is None:
+        geom_penalty = brace_geometry_penalty(braces, geo['outline'], geo['holeCx'], geo['holeCy'], geo['holeR'], Lx, Ly)
+        geom_penalty += brace_overlap_penalty(braces, Lx, Ly)
+
+    seg_len_mm = geo.get('braceSegMm')
+    mx, my, mm = braces_to_masses(braces, Lx, Ly, seg_len_mm, trapezoid=geo.get('braceMassTrapezoid', True))
+    braceM = _spread_to_nodes(grid, mx, my, mm) / (grid['dd']**2)
+    total_brace_mass_g = sum(mm)*1000.0
+    # Point masses (accelerometers, sensors): [{fx, fy, massG}], spread onto
+    # the 4 surrounding nodes like brace mass.
+    pms = geo.get('pointMasses') or []
+    point_mass_g = 0.0
+    if pms:
+        braceM = braceM + _spread_to_nodes(grid, [q['fx']*Lx for q in pms], [q['fy']*Ly for q in pms],
+                                           [q['massG']/1000.0 for q in pms]) / (grid['dd']**2)
+        point_mass_g = float(sum(q['massG'] for q in pms))
+    iso = geo.get('braceShearModel', 'iso') == 'iso'
+    K_brace, n_aux = brace_stiffness_matrix(braces, Lx, Ly, grid, seg_len_mm, plate=(h, Ex, Ey, Gxy, nu_xy),
+                                            iso_shear=iso, plate_shear=plate_shear,
+                                            flange_cap=bool(geo.get('flangeCap', False)),
+                                            flange_width=float(geo.get('braceFlangeWidth') or BRACE_FLANGE_WIDTH),
+                                            sublines=int(geo.get('braceSublines', BRACE_SUBLINES)),
+                                            bridge=base['bridge_section'] if geo.get('braceBridgeSection', True) else None)
+    K = base['K0']
+    fp = brace_footprint_terms(braces, Lx, Ly, grid, (h, Ex, Ey, Gxy, nu_xy), iso_shear=iso,
+                               Gsh=(h*float(geo.get('Gxz') or 0), h*float(geo.get('Gyz') or 0))) \
+        if geo.get('braceFootprint', True) else None
+    if fp is not None:
+        # energy sum_r D_add (n.kappa.n)^2, kappa_nn = nx^2 k_xx + ny^2 k_yy + nx ny k_12 (k_12 = Cxy, engineering twist)
+        A1, A2, A3, A4, A5 = (sparse.diags(v) for v in fp['rows'])
+        sym = lambda X, Ad, Y: X.T@Ad@Y + Y.T@Ad@X
+        K = K + (Cxx.T@A1@Cxx + Cyy.T@A2@Cyy + Cxy.T@A3@Cxy + sym(Cxx, A3, Cyy)
+                 + sym(Cxx, A4, Cxy) + sym(Cyy, A5, Cxy))
+        if plate_shear:
+            fgx, fgy = fp['link_gh']
+            K = K + sparse.block_diag((sparse.csr_matrix((N, N)), sparse.diags(PLATE_SHEAR_FACTOR*fgx),
+                                       sparse.diags(PLATE_SHEAR_FACTOR*fgy)), format='csr')
+    bridge_mass_g = base['bridge_mass_g']
+    m_w = base['m_w0'] + braceM
+    M = base['M0'] + sparse.diags(np.concatenate([braceM, np.zeros(n_shear)]), format='csr')
     # The braces' shear strains are extra unknowns after the plate's (massless,
     # so they never show up as modes); pad the plate's matrices to match and
     # keep only the first N entries (w) of every solution.
     pad = lambda A: sparse.block_diag((A, sparse.csr_matrix((n_aux, n_aux))), format='csr') if n_aux else A
     K = pad(K) + K_brace
-    if grid.get('P') is not None:
-        P = sparse.hstack([grid['P'], sparse.csr_matrix((grid['P'].shape[0], n_shear + n_aux))]) if n_shear + n_aux else grid['P']
+    M = pad(M)
+    if base['P'] is not None:
+        P = base['P']
+        if n_aux:
+            P = sparse.hstack([P, sparse.csr_matrix((P.shape[0], n_aux))], format='csr')
         K = K + SS_PIN_PENALTY*float(np.max(K.diagonal())) * (P.T @ P)
     K = (K+K.T)*0.5
     M = (M+M.T)*0.5
@@ -988,6 +1518,12 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     f_hi = max(target_hz)*1.3 if target_hz else None
     k_max = min(60, N-2)
     n_request = min(max(n_modes_needed+6, 2*n_modes_needed+8), k_max)
+    # Start from the mode count the last solve on this geometry needed to
+    # pass f_hi (plus two), instead of the generous default.
+    req_key = (_geometry_key(geo), n_modes_needed, f_hi)
+    if req_key in _MODE_REQUEST:
+        n_request = min(max(n_modes_needed + 2, _MODE_REQUEST[req_key] + 2), k_max)
+    eig_tol = float(geo.get('eigTol') or 0.0)
     sigma = (2*math.pi*1.0)**2
     Kc, Mc = K.tocsc(), M.tocsc()
     # One factorization of K - sigma*M serves every eigsh call below and,
@@ -999,7 +1535,11 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     OPinv = LinearOperator(Kc.shape, matvec=lu_shift.solve, dtype=float)
     while True:
         try:
-            vals, vecs_full = eigsh(Kc, k=max(1,n_request), M=Mc, sigma=sigma, which='LM', OPinv=OPinv)
+            # A fixed start vector (not ARPACK's own random one) so the same
+            # design always gives bit-identical eigenvalues: with a seed, a
+            # search is then reproducible run to run.
+            v0 = np.random.RandomState(12345).rand(Kc.shape[0]) + 0.5
+            vals, vecs_full = eigsh(Kc, k=max(1,n_request), M=Mc, sigma=sigma, which='LM', OPinv=OPinv, tol=eig_tol, v0=v0)
         except Exception as exc:
             return {'ok': False, 'reason': f'eigsh_failed:{exc}'}
         order = np.argsort(vals)
@@ -1008,6 +1548,11 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
         if f_hi is None or freqs_all[-1] >= f_hi or n_request >= k_max:
             break
         n_request = min(2*n_request, k_max)
+    if f_hi is not None:
+        above = np.nonzero(freqs_all >= f_hi)[0]
+        _MODE_REQUEST[req_key] = int(above[0] + 1) if above.size else int(n_request)
+        if len(_MODE_REQUEST) > 64:
+            _MODE_REQUEST.pop(next(iter(_MODE_REQUEST)))
     # Mass-normalize (phi^T M phi = 1) so mode strengths are comparable.
     m_diag = m_w
     vecs = vecs / np.sqrt(np.einsum('ij,i,ij->j', vecs, m_diag, vecs))[None, :]
@@ -1056,6 +1601,10 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
     # as the brace-mass lumping above -- nodal forces become an equivalent
     # pressure by dividing by the nodal area (dd²).
     F[idxs] = geo['loadN'] * w / (grid['dd']**2)
+    if geo.get('pressurePa'):
+        # Test hook (VALIDATION_PLAN Stage 2.6): a uniform pressure over the
+        # plate, weighted by each node's cut-cell area fraction.
+        F[:N] += float(geo['pressurePa']) * grid['mass_scale']
     try:
         if grid['bc_mode'] != 'free':
             # K x = F is (K - sigma*M) x = F - sigma*M x: refine from the
@@ -1083,6 +1632,12 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
         grid['mass_scale'] > 0.5)
     field_modes = [m['idx'] for m in modes_out]
 
+    probe = None
+    if geo.get('probePoints'):
+        # mass-normalized displacement of each reported mode at given (fx, fy)
+        pp = geo['probePoints']
+        probe = [sample_field_at_points(grid, vecs[:, m['idx']], [q[0]*Lx for q in pp], [q[1]*Ly for q in pp]).tolist()
+                 for m in modes_out]
     meas_shapes = None
     if meas_xy is not None and len(meas_xy[0]):
         meas_shapes = []
@@ -1118,7 +1673,9 @@ def evaluate_design(geo, braces, n_modes_needed, meas_xy=None, want_field=False)
         'modes': [{k: v for k, v in m.items() if k != 'idx'} for m in modes_out], 'hiddenStrong': hidden_strong,
         'fieldShapes': field_shapes, 'fieldNx': FIELD_NX, 'fieldNy': FIELD_NY,
         'deflBridgeMm': abs(defl_at_bridge)*1000.0, 'deflMaxMm': abs(defl_max)*1000.0,
-        'massG': total_brace_mass_g, 'bridgeMassG': bridge_mass_g, 'nNodes': N, 'geomPenalty': geom_penalty,
+        'massG': total_brace_mass_g, 'bridgeMassG': bridge_mass_g, 'pointMassG': point_mass_g,
+        'nNodes': N, 'geomPenalty': geom_penalty, 'gridMm': grid['dd']*1000.0,
+        'nBelow5Hz': int(np.sum(freqs_all <= 5.0)), 'probe': probe,
         'torqueResolved': torque_resolved, 'torqueRequested': abs(geo.get('bridgeTorqueNmm',0.0)) > 1e-9,
     }
 
@@ -1148,7 +1705,38 @@ def _bridge_samples(geo, Lx, Ly, step=0.001):
         return np.array([geo['bridgeFx']*Lx]), np.array([geo['bridgeFy']*Ly])
     return PX[keep], PY[keep]
 
-def _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly):
+BRIDGE_SUBSAMPLE = 8
+
+def _spread_to_rows(grid, xs, ys, weights):
+    """Bilinear spreading of point weights onto the curvature rows' lattice
+    (rows sit on grid nodes). A partition of unity, so a region sampled
+    uniformly at density 1/dd^2 gives every row inside it exactly 1 --
+    unlike nearest-row binning, whose count noise (+-30%) the series
+    stiffness formulas can't tolerate. Weight landing on a node without a
+    row is shared out over the corners that have one."""
+    nrow = grid['row_xy'].shape[0]
+    rm = grid.get('_row_map')
+    if rm is None:
+        rm = -np.ones((grid['ny'], grid['nx']), dtype=np.int64)
+        ri = np.rint((grid['row_xy'][:, 0] - grid['bbx0'])/grid['dd']).astype(int)
+        rj = np.rint((grid['row_xy'][:, 1] - grid['bby0'])/grid['dd']).astype(int)
+        rm[rj, ri] = np.arange(nrow)
+        grid['_row_map'] = rm
+    dd = grid['dd']
+    fx = (np.asarray(xs, float) - grid['bbx0'])/dd; fy = (np.asarray(ys, float) - grid['bby0'])/dd
+    i0 = np.clip(np.floor(fx).astype(int), 0, grid['nx']-2); j0 = np.clip(np.floor(fy).astype(int), 0, grid['ny']-2)
+    tx = np.clip(fx - i0, 0, 1); ty = np.clip(fy - j0, 0, 1)
+    ci = np.stack([i0, i0+1, i0, i0+1], 1); cj = np.stack([j0, j0, j0+1, j0+1], 1)
+    W = np.stack([(1-tx)*(1-ty), tx*(1-ty), (1-tx)*ty, tx*ty], 1)
+    ids = rm[cj, ci]
+    W = np.where(ids >= 0, W, 0.0)
+    W = W / np.maximum(W.sum(axis=1, keepdims=True), 1e-12)
+    out = np.zeros(nrow)
+    ok = ids >= 0
+    np.add.at(out, ids[ok], (W*np.asarray(weights, float)[:, None])[ok])
+    return out
+
+def _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly, nuxy_p=0.3):
     """The bridge block as structure: a hardwood layer (bridgeHeightMm thick,
     bridgeE, bridgeRho) bonded over its footprint on the outside face.
     Stiffness is the extra bending stiffness of the plate+bridge section
@@ -1180,24 +1768,97 @@ def _bridge_structure(geo, grid, h, Ex, Ey, Lx, Ly):
     dd = grid['dd']; a_each = step*step
     m_nodes = _spread_to_nodes(grid, PX, PY, np.full(PX.size, rhob*hb*a_each)) / (dd*dd)
     mass_g = rhob*hb*a_each*PX.size*1000.0
-    _, ri = cKDTree(grid['row_xy']).query(np.stack([PX, PY], axis=1))
-    cover = np.bincount(ri, minlength=grid['row_xy'].shape[0]) * a_each / (dd*dd)
-    def d_add(Ep):
-        zp, zb = h/2.0, h + hb/2.0
-        zn = (Ep*h*zp + Eb*hb*zb) / (Ep*h + Eb*hb)
-        return Eb*(hb**3/12.0 + hb*(zb-zn)**2) + Ep*h*(zp-zn)**2
-    Dx, Dy, nub = d_add(Ex), d_add(Ey), 0.3
-    Dxy = math.sqrt(Dx*Dy)
+    nub = 0.3
+    Gb = Eb/(2.0*(1.0 + nub))
+    poly = np.array(_bridge_footprint(geo, Lx, Ly))
+    span_x, span_y = float(np.ptp(poly[:, 0])), float(np.ptp(poly[:, 1]))
+    partial = geo.get('bridgePartialComposite', True)
+    def d_add(Ep, Gpz, span):
+        # Composite bending of plate + block about their shared neutral axis:
+        # the block's own bending plus EA_eff * z^2 (EA_eff the two layers'
+        # axial stiffnesses in series, z the distance between their centroids).
+        # The plate operator already counts the plate's own bending.
+        EA = Ep*h*Eb*hb/(Ep*h + Eb*hb)
+        z = 0.5*(h + hb)
+        phi = 1.0
+        if partial and Gpz:
+            # Partial interaction: the composite force has to pass through the
+            # plate's and the block's thickness in shear (interface stiffness
+            # k per area), so over a block of finite span it only builds up a
+            # development length sqrt(EA/k) in from each end. Averaged over
+            # the span: phi = 1 - tanh(b L/2)/(b L/2), b = sqrt(k/EA).
+            k = 1.0/((0.5*h)/Gpz + (0.5*hb)/Gb)
+            bl = math.sqrt(k/EA)*0.5*span
+            phi = 1.0 - math.tanh(bl)/bl if bl > 1e-9 else 0.0
+        return Eb*hb**3/12.0 + phi*EA*z*z
+    Dx = d_add(Ex, geo.get('Gxz') if geo.get('plateShear', True) else None, span_x)
+    Dy = d_add(Ey, geo.get('Gyz') if geo.get('plateShear', True) else None, span_y)
+    # Directional series/parallel stiffening. Within one row's cell, plate
+    # and block act in SERIES for bending along x wherever a line along x
+    # crosses the block's edge (their compliances add), and in PARALLEL
+    # between such lines (side-by-side strips share the curvature). So each
+    # cell near the block is sub-sampled (BRIDGE_SUBSAMPLE^2): for bending
+    # along x, every sub-row with covered fraction f gets
+    # D_p/(1 - f*D_add/(D_p + D_add)), and the sub-rows are averaged; the
+    # same along y with sub-columns. A fully covered row gets exactly
+    # D_p + D_add. A plain area-fraction weighting (in parallel) made a
+    # partly covered edge row rigid, so the block read about a cell too big:
+    # on a bridge-only rectangle, mode 3 was +10% at GN 100 against a 3D
+    # solid model and +2% at GN 160.
+    nu_yx = nuxy_p*Ey/Ex; den = 1.0 - nuxy_p*nu_yx
+    D11p, D22p = Ex*h**3/(12*den), Ey*h**3/(12*den)
+    nrow = grid['row_xy'].shape[0]
+    rx, ry = grid['row_xy'][:, 0], grid['row_xy'][:, 1]
+    near = np.nonzero((rx > poly[:, 0].min() - dd) & (rx < poly[:, 0].max() + dd) &
+                      (ry > poly[:, 1].min() - dd) & (ry < poly[:, 1].max() + dd))[0]
+    sbs = BRIDGE_SUBSAMPLE
+    off = ((np.arange(sbs) + 0.5)/sbs - 0.5)*dd
+    ox, oy = np.meshgrid(off, off)          # [y, x]
+    qx = (rx[near][:, None, None] + ox[None]).ravel(); qy = (ry[near][:, None, None] + oy[None]).ravel()
+    mask = points_in_polygon(qx, qy, [tuple(q) for q in poly]).reshape(-1, sbs, sbs).astype(float)
+    def series(Dp, Da, f):
+        cp = f*Da/(Dp + Da)
+        return Dp*cp/(1.0 - cp)
+    ex = np.zeros(nrow); ey = np.zeros(nrow)
+    ex[near] = series(D11p, Dx, mask.mean(axis=2)).mean(axis=1)   # sub-rows (fixed y) along x
+    ey[near] = series(D22p, Dy, mask.mean(axis=1)).mean(axis=1)   # sub-columns (fixed x) along y
+    exy = np.sqrt(ex*ey)
+    Gxz_, Gyz_ = (geo.get('Gxz'), geo.get('Gyz')) if geo.get('plateShear', True) else (None, None)
+    gx_r = np.zeros(nrow); gy_r = np.zeros(nrow)
+    if Gxz_ and Gyz_:
+        gx_r[near] = series(h*Gxz_, Gb*hb, mask.mean(axis=2)).mean(axis=1)
+        gy_r[near] = series(h*Gyz_, Gb*hb, mask.mean(axis=1)).mean(axis=1)
+    _spread_to_rows(grid, rx[:1], ry[:1], [0.0])   # builds the row map
+    rm = grid['_row_map']
+    def link_from_rows(ends, vals):
+        a_, b_ = ends
+        ra = rm[grid['nodes_j'][a_], grid['nodes_i'][a_]]
+        va = np.where(ra >= 0, vals[np.maximum(ra, 0)], 0.0)
+        bb = np.maximum(b_, 0)
+        rb = rm[grid['nodes_j'][bb], grid['nodes_i'][bb]]
+        vb = np.where((b_ >= 0) & (rb >= 0), vals[np.maximum(rb, 0)], va)
+        return 0.5*(va + vb)
     # Fraction of each node's cell the footprint covers, averaged onto links.
     frac = _spread_to_nodes(grid, PX, PY, np.full(PX.size, a_each)) / (dd*dd)
     def link_cover(ends):
         a, b = ends
-        return np.where(b >= 0, 0.5*(frac[a] + frac[np.maximum(b, 0)]), frac[a])
+        return np.minimum(np.where(b >= 0, 0.5*(frac[a] + frac[np.maximum(b, 0)]), frac[a]), 1.0)
+    if not geo.get('bridgeSeries', True):
+        # Legacy: full composite D on every row the footprint touches,
+        # weighted by its (nearest-row) area fraction, in parallel.
+        _, ri_ = cKDTree(grid['row_xy']).query(np.stack([PX, PY], axis=1))
+        cov_ = np.bincount(ri_, minlength=nrow) * a_each / (dd*dd)
+        Dxy_ = math.sqrt(Dx*Dy)
+        ex, ey, exy = cov_*Dx, cov_*Dy, cov_*Dxy_
+        lc = (link_cover(grid['Sx_ends']), link_cover(grid['Sy_ends']))
+        zc = (h + hb)/2.0
+        return {'rowD': (ex, ey, nub*exy, 0.5*(1.0-nub)*exy), 'm_nodes': m_nodes, 'mass_g': mass_g,
+                'I': rhob*(hb**3/12.0 + hb*zc*zc), 'link_cover': lc, 'link_gh': (Gb*hb*lc[0], Gb*hb*lc[1])}
     zc = (h + hb)/2.0   # block centroid above the plate's mid-plane
-    return {'D': (Dx, Dy, nub*Dxy, 0.5*(1.0-nub)*Dxy), 'cover': sparse.diags(cover),
-            'm_nodes': m_nodes, 'mass_g': mass_g, 'Gh': Eb/(2.0*(1.0 + nub))*hb,
-            'I': rhob*(hb**3/12.0 + hb*zc*zc),
-            'link_cover': (link_cover(grid['Sx_ends']), link_cover(grid['Sy_ends']))}
+    return {'rowD': (ex, ey, nub*exy, 0.5*(1.0-nub)*exy),
+            'm_nodes': m_nodes, 'mass_g': mass_g, 'I': rhob*(hb**3/12.0 + hb*zc*zc),
+            'link_cover': (link_cover(grid['Sx_ends']), link_cover(grid['Sy_ends'])),
+            'link_gh': (link_from_rows(grid['Sx_ends'], gx_r), link_from_rows(grid['Sy_ends'], gy_r))}
 
 HIDDEN_MODE_RATIO = 0.5   # unmatched modes at least this strong (vs the weakest matched one) count as "hidden"
 
@@ -1597,6 +2258,8 @@ FALCATE_BOUNDS = [(6,20),(2,10),(6,20),(2,10),(6,20),(3,14),(6,20),(2,10),(6,20)
 
 
 # ── Simulated annealing over a continuous parameter vector ──────────────
+SEARCH_EIG_TOL = 1e-6   # ARPACK tolerance during search and polish; the card's final solve uses machine precision
+SKIP_STATS = {'skipped': 0}
 SA_T_END = 0.995**900   # temperature at the end of a run, relative to its start
 
 def sa_temperature(it, iters, temp_scale=1.0):
@@ -1617,6 +2280,7 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
     cur_bounds_violation = None  # set on first iteration once braces exist
     best_valid_x, best_valid_cost = None, 1e18
     n_modes = len(targets)
+    geo = dict(geo, eigTol=SEARCH_EIG_TOL)   # P1.1: the search doesn't need machine-precision eigenvalues
     for it in range(iters):
         if CANCEL_FLAG['stop']:
             break
@@ -1641,10 +2305,12 @@ async def sa_continuous(encode_fn, bounds, geo, targets, meas_xy, defl_limit_mm,
                 progress_cb(label, it, iters, best_cost, best_result)
             await asyncio.sleep(0)  # yield every iteration, not just on progress ticks -- keeps the page responsive during long runs
             continue
-        result = evaluate_design(geo, braces, n_modes, meas_xy)
-        for i,t in enumerate(targets):
-            if result.get('ok') and result.get('measShapes') and i < len(result['measShapes']):
-                pass
+        floor, gp = cost_floor(geo, braces, mass_weight)
+        if best_result is not None and can_skip(floor, cur_cost, best_cost, T):
+            SKIP_STATS['skipped'] += 1
+            await asyncio.sleep(0)
+            continue
+        result = evaluate_design(geo, braces, n_modes, meas_xy, geom_penalty=gp)
         cost = objective(result, targets, defl_limit_mm, mass_weight)
         accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
         if accept:
@@ -1837,9 +2503,10 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
         if b.get('heightTip') is not None: b['heightTip'] = max(2.0, min(b['height'], b['heightTip']))
         if b.get('widthTip') is not None: b['widthTip'] = max(min_tip, min(b['width'], b['widthTip']))
     n_modes = len(targets)
-    def evalb(bl):
+    geo = dict(geo, eigTol=SEARCH_EIG_TOL)   # P1.1
+    def evalb(bl, floor_gp=None):
         full = expand(bl)
-        r = evaluate_design(geo, full, n_modes, meas_xy)
+        r = evaluate_design(geo, full, n_modes, meas_xy, geom_penalty=None if floor_gp is None else floor_gp[1])
         return objective(r, targets, defl_limit_mm, mass_weight, n_braces=len(full)), r
     cur_cost, cur_result = evalb(braces)
     cur_bounds_violation = bounds_violation(expand(braces), geo)
@@ -1957,7 +2624,15 @@ async def sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight, ma
                 progress_cb(label, it, iters, best_cost, best_result)
             await asyncio.sleep(0)  # yield every iteration, not just on progress ticks -- keeps the page responsive during long runs
             continue
-        cost, result = evalb(cand)
+        full_c = expand(cand)
+        fl = cost_floor(geo, full_c, mass_weight, n_braces=len(full_c))
+        if can_skip(fl[0], cur_cost, best_cost, T):
+            SKIP_STATS['skipped'] += 1
+            if it % max(1,iters//25) == 0 or it==iters-1:
+                progress_cb(label, it, iters, best_cost, best_result)
+            await asyncio.sleep(0)
+            continue
+        cost, result = evalb(cand, fl)
         accept = cost < cur_cost or random.random() < math.exp(-(cost-cur_cost)/max(1e-6,T*40))
         if accept:
             braces, cur_cost, cur_result, cur_bounds_violation = cand, cost, result, violation
@@ -2093,7 +2768,65 @@ def grid_correction(braces, polish_geo, fine_geo, targets, n_modes, meas_xy, def
             'hifiGN': int(polish_geo['GN']), 'displayGN': int(fine_geo['GN'])}
     return polish_targets, defl_limit_mm/d_ratio, info
 
-def fine_resolve(braces, polish_geo, fine_geo, n_modes, meas_xy):
+GRID_EST_SAFETY = 1.25   # Roache's safety factor for the grid band
+
+def _richardson3(gns, fs):
+    """Observed-order Richardson extrapolation from three grids (ascending
+    GN). Returns (f_inf, p, monotone). Falls back to p = 1 on the two finest
+    grids when the three don't converge monotonically or p leaves [0.5, 4]."""
+    (g1, g2, g3), (f1, f2, f3) = gns, fs
+    d1, d2 = f2 - f1, f3 - f2
+    def ratio(p):
+        return (g1**-p - g2**-p)/(g2**-p - g3**-p)
+    p = None; mono = d1*d2 > 0 and abs(d2) < abs(d1)*4
+    if mono and abs(d2) > 1e-12:
+        target = d1/d2
+        lo, hi = 0.5, 4.0
+        if (ratio(lo) - target)*(ratio(hi) - target) < 0:
+            for _ in range(60):
+                mid = 0.5*(lo + hi)
+                if (ratio(lo) - target)*(ratio(mid) - target) <= 0: hi = mid
+                else: lo = mid
+            p = 0.5*(lo + hi)
+    if p is None:
+        p = 1.0; mono = False
+    finf = f3 + d2*g3**-p/(g2**-p - g3**-p)
+    return float(finf), float(p), bool(mono)
+
+def grid_estimate(braces, polish_geo, fine_geo, r_lo, r_hi, track, n_modes, meas_xy):
+    """P1.5: a third solve between the polish and fine grids, each target's
+    mode followed by shape across all three, then Richardson extrapolation
+    with the observed order. Per target slot: the extrapolated frequency,
+    a +- band (GRID_EST_SAFETY * |f_fine - f_inf|), the order, and whether
+    the three grids converged monotonically."""
+    gl, gf = int(polish_geo['GN']), int(fine_geo['GN'])
+    gm = int(round(math.sqrt(gl*gf)))
+    if not (gl < gm < gf):
+        return None
+    mid_geo = dict(fine_geo, GN=gm)
+    r_mid = evaluate_design(mid_geo, braces, n_modes, meas_xy, want_field=True)
+    if not r_mid.get('ok'):
+        return None
+    hs, ms = r_hi.get('fieldShapes') or [], r_mid.get('fieldShapes') or []
+    out = {'gns': [gl, gm, gf], 'fine': [], 'extrapolated': [], 'band': [], 'order': [], 'monotone': []}
+    for (j, jh) in track:
+        if jh is None or j is None or jh >= len(hs):
+            for k in ('fine', 'extrapolated', 'band', 'order', 'monotone'):
+                out[k].append(None)
+            continue
+        f_hi = r_hi['modes'][jh]['freq']; f_lo = r_lo['modes'][j]['freq']
+        best = max(range(len(ms)), key=lambda q: mac(hs[jh], ms[q])) if ms else None
+        if best is None or mac(hs[jh], ms[best]) < GRID_TRACK_MAC:
+            for k in ('fine', 'extrapolated', 'band', 'order', 'monotone'):
+                out[k].append(None)
+            continue
+        f_mid = r_mid['modes'][best]['freq']
+        finf, p, mono = _richardson3((gl, gm, gf), (f_lo, f_mid, f_hi))
+        out['fine'].append(f_hi); out['extrapolated'].append(finf)
+        out['band'].append(GRID_EST_SAFETY*abs(f_hi - finf)); out['order'].append(p); out['monotone'].append(mono)
+    return out
+
+def fine_resolve(braces, polish_geo, fine_geo, n_modes, meas_xy, estimate=True):
     """The card's re-solve on the fine grid, reporting for each target the
     fine-grid version of the mode the polish tuned (followed by shape)
     rather than whatever the fine grid's own strength pairing picks. A slot
@@ -2125,7 +2858,24 @@ def fine_resolve(braces, polish_geo, fine_geo, n_modes, meas_xy):
     r_hi['freqs'] = freqs
     if meas is not None:
         r_hi['measShapes'] = meas
+    if estimate:
+        try:
+            r_hi['gridEstimate'] = grid_estimate(braces, polish_geo, fine_geo, r_lo, r_hi, track, n_modes, meas_xy)
+        except Exception:
+            r_hi['gridEstimate'] = None
     return r_hi
+
+def _seed_pattern(p, key, stage='coarse'):
+    """P1.7: with a 'seed' in the payload, reseed Python's and numpy's RNGs
+    per pattern and stage, so a run is reproducible and the sequential
+    (browser) and parallel (desktop) pipelines draw the same numbers."""
+    seed = p.get('seed')
+    if seed is None or seed == '':
+        return
+    _MODE_REQUEST.clear()   # its guesses depend on what ran before; start every seeded stage from the same state
+    import zlib
+    v = (int(seed) * 1000003 + zlib.crc32(f'{key}/{stage}'.encode())) % (2**32)
+    random.seed(v); np.random.seed(v)
 
 async def run_all_patterns(payload_json):
     try:
@@ -2183,25 +2933,30 @@ async def run_all_patterns(payload_json):
 
         results = {}   # key -> (braces, coarse_cost, coarse_x)
         if 'xbrace' in patterns and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'xbrace')
             coarse_x, cost, _, braces = await sa_continuous(xbrace_encode, XBRACE_BOUNDS, geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'xbrace')
             results['xbrace'] = (braces, cost, coarse_x)
         if 'fan' in patterns and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'fan')
             enc = lambda pp, g: fan_encode(pp, fan_n, g)
             coarse_x, cost, _, braces = await sa_continuous(enc, fan_bounds(fan_n), geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'fan')
             results['fan'] = (braces, cost, coarse_x)
         if 'falcate' in patterns and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'falcate')
             coarse_x, cost, _, braces = await sa_continuous(falcate_encode, FALCATE_BOUNDS, geo, targets, meas_xy,
                                                     defl_limit_mm, mass_weight, iters, _progress, 'falcate')
             results['falcate'] = (braces, cost, coarse_x)
         if 'novel' in patterns and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'novel')
             braces, cost, _ = await sa_free_topology(geo, targets, meas_xy, defl_limit_mm, mass_weight,
                                                     max_braces, iters, _progress, 'novel', symmetric,
                                                     max_height=novel_max_height, max_width=novel_max_width,
                                                     max_length_mm=novel_max_length)
             results['novel'] = (braces, cost, None)
         if 'novelExperimental' in patterns and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'novelExperimental')
             # Same search, same mass penalty keeping it honest -- just with
             # the symmetry requirement and the tight brace-count cap both
             # removed, so it has a substantially larger space to explore
@@ -2218,6 +2973,7 @@ async def run_all_patterns(payload_json):
                                                     max_length_mm=exp_max_length)
             results['novelExperimental'] = (braces, cost, None)
         if 'custom' in patterns and seed_braces and not CANCEL_FLAG['stop']:
+            _seed_pattern(p, 'custom')
             # Optimizes the actual uploaded/selected design -- its own
             # brace count becomes the cap (rather than the Novel-pattern
             # settings above, which have nothing to do with a design that
@@ -2292,6 +3048,7 @@ async def run_all_patterns(payload_json):
                     cap = max(1, len(braces) if not sym else (len(braces)+1)//2 * 2)
                     this_polish_iters, mats = polish_iters, None
                     lockp = custom_lock_positions
+                _seed_pattern(p, key, 'polish')
                 polished_braces, polished_cost, r = await sa_free_topology(
                     hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight, cap,
                     this_polish_iters, _progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
@@ -2307,6 +3064,7 @@ async def run_all_patterns(payload_json):
                 # exactly what produced a cost spike at the start of polish:
                 # not the design being "reset" by design, but a real bug
                 # throwing away a perfectly good starting point.
+                _seed_pattern(p, key, 'polish')
                 _, polished_cost, r, polished_braces = await sa_continuous(
                     enc, bounds, hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight,
                     polish_iters, _progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
@@ -2364,6 +3122,8 @@ async def run_all_patterns(payload_json):
                 'torqueResolved': r.get('torqueResolved', True),
                 'torqueRequested': r.get('torqueRequested', False),
                 'gridCorrection': r.get('gridCorrection'),
+                'gridEstimate': r.get('gridEstimate'), 'gridMm': r.get('gridMm'), 'pointMassG': r.get('pointMassG'),
+                'seed': p.get('seed'),
             }
         BRIDGE['onOptimizerDone'](json.dumps(out), CANCEL_FLAG['stop'])
     except Exception as exc:
@@ -2533,6 +3293,7 @@ async def _solve_pattern_async(key, p, progress_queue=None):
             pass  # a progress-reporting hiccup should never take down the actual search
 
     coarse_x = None
+    _seed_pattern(p, key)
     if key == 'xbrace':
         coarse_x, cost, _, braces = await sa_continuous(xbrace_encode, XBRACE_BOUNDS, geo, targets, meas_xy,
                                                 defl_limit_mm, mass_weight, iters, _report_progress, 'xbrace')
@@ -2612,12 +3373,14 @@ async def _solve_pattern_async(key, p, progress_queue=None):
             cap = max(1, len(braces) if not sym else (len(braces)+1)//2 * 2)
             this_polish_iters, mats = polish_iters, None
             lockp = custom_lock_positions
+        _seed_pattern(p, key, 'polish')
         polished_braces, polished_cost, r = await sa_free_topology(
             hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight, cap,
             this_polish_iters, _report_progress, key+'-polish', sym, warm_braces=braces, temp_scale=0.15,
             materials=mats, lock_positions=lockp, **limit_kwargs)
     else:
         enc, bounds = ENCODERS[key]
+        _seed_pattern(p, key, 'polish')
         _, polished_cost, r, polished_braces = await sa_continuous(
             enc, bounds, hifi_geo, polish_targets, meas_xy, polish_defl, mass_weight,
             polish_iters, _report_progress, key+'-polish', x0=coarse_x, temp_scale=0.15)
@@ -2650,6 +3413,8 @@ async def _solve_pattern_async(key, p, progress_queue=None):
         'torqueResolved': r.get('torqueResolved', True),
         'torqueRequested': r.get('torqueRequested', False),
         'gridCorrection': grid_info,
+        'gridEstimate': r.get('gridEstimate'), 'gridMm': r.get('gridMm'), 'pointMassG': r.get('pointMassG'),
+        'seed': p.get('seed'),
     }
 
 
